@@ -112,9 +112,13 @@ swift package generate-documentation --target TonConnectCore
 swift package --disable-sandbox preview-documentation --target TonConnectCore
 ```
 
-CI builds both and **fails on any DocC warning**. That is not pedantry: a warning
-is how you learn that a doc comment points at a symbol somebody renamed, and a
-link rotting silently is worse than a build going red.
+CI builds both with `--warnings-as-errors` and **fails on any DocC warning**.
+That is not pedantry: a warning is how you learn that a doc comment points at a
+symbol somebody renamed, and a link rotting silently is worse than a build going
+red. The flag is DocC's own, so it judges documentation only — Swift compiler
+warnings are a separate conversation and do not fail this job. Some of them
+cannot be fixed anyway: the two-parameter `onChange` starts at iOS 17, and this
+package supports iOS 16.
 
 When you add a public type, curate it under a `## Topics` heading in the
 catalog's landing page. Anything left uncurated still appears, but in an
