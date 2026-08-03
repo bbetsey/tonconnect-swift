@@ -18,7 +18,7 @@ targets:
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.tonconnect.swift.example
-            CFBundleURLSchemes: [tcdemo]   # инфраструктура ret=url на будущее (сейчас ret=back — no-op)
+            CFBundleURLSchemes: [tcdemo]   # groundwork for a ret=url return strategy; the app currently uses ret=back
     dependencies:
       - package: TonConnect
         product: TonConnectCore
@@ -28,4 +28,6 @@ targets:
         product: TonConnectSDK
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.tonconnect.swift.example
-      # DEVELOPMENT_TEAM подставишь в Xcode (Signing & Capabilities) при сборке на девайс
+      # No DEVELOPMENT_TEAM on purpose: set your own in Xcode under Signing &
+      # Capabilities when you build this onto a device. CI builds with
+      # CODE_SIGNING_ALLOWED=NO and needs none.
