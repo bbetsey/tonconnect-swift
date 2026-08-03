@@ -1,15 +1,56 @@
 name: CI
 
+# What CI can and cannot do here, stated plainly:
+#
+# It CAN check every pull request — the build, the tests, and the branch rules
+# below — and refuse to go green when a rule is broken.
+#
+# It CANNOT prevent a push. A workflow runs after the push has landed, so the
+# real guard on `main` is branch protection in the repository settings, which
+# uses these checks as its required status checks. See Tools/protect-branches.sh.
+
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Only develop, release/* or hotfix/* may target main
+        if: github.base_ref == 'main'
+        run: |
+          head='${{ github.head_ref }}'
+          case "$head" in
+            develop|release/*|hotfix/*)
+              echo "ok: $head -> main" ;;
+            *)
+              echo "::error::main takes develop, release/* or hotfix/* — got '$head'."
+              echo "::error::Merge the work into develop first; main only ever receives a release."
+              exit 1 ;;
+          esac
+
+      - name: Branches targeting develop follow <type>/<slug>
+        if: github.base_ref == 'develop'
+        run: |
+          head='${{ github.head_ref }}'
+          case "$head" in
+            feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
+              echo "ok: $head" ;;
+            *)
+              echo "::error::branch '$head' does not follow <type>/<slug>."
+              echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
+              exit 1 ;;
+          esac
+
   test:
     name: Build and test
     runs-on: macos-latest
