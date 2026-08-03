@@ -8,8 +8,8 @@ crypto, the SSE bridge, the RPC envelope — is implemented in Swift, and the
 wallet picker, the connect button and the operation sheet are plain SwiftUI views.
 
 > **Status: pre-release.** The package works end to end and is exercised against
-> live wallets on a real device, but no version has been tagged yet and the
-> public API may still change.
+> live wallets on a real device. While the major version is zero the public API
+> may still change.
 
 > **Unofficial.** This is an independent implementation, not affiliated with or
 > endorsed by the TON Foundation or tonkeeper. It implements the dApp side of the
@@ -168,9 +168,9 @@ swift test
 
 ## Wallets
 
-The flows have been exercised on a physical device against Tonkeeper,
-MyTonWallet, Gram Wallet, Tonhub and Telegram Wallet — connect, restore,
-send, sign and disconnect. Wallets disagree with the specification in small ways
+The flows — connect, restore, send, sign and disconnect — have been exercised on
+a physical device against live wallets, not only against a fake bridge.
+Wallets disagree with the specification in small ways
 (the type of a field, a non-spec error code, how a Telegram Mini App link carries
 its parameters), so the package is deliberately tolerant on the wire: an
 unexpected shape is accommodated rather than allowed to break a session.
