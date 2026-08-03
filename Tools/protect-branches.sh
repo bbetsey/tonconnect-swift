@@ -46,5 +46,14 @@ gh api -X PATCH "repos/$REPO" \
 echo "  repository: squash-only merges, head branch deleted after merge"
 
 echo
-echo "Done. Set the default branch to develop in the repository settings if you"
-echo "want new pull requests to target it by default."
+echo "Done. Two things this script deliberately does NOT do:"
+echo
+echo "  1. Tags. Branch protection covers refs/heads only, so anyone with write"
+echo "     access can still push refs/tags/*. To restrict that, add a repository"
+echo "     ruleset targeting tags with \"restrict creations\" (Settings -> Rules ->"
+echo "     Rulesets -> New tag ruleset), granting bypass to whoever cuts releases."
+echo "     It is left to the UI on purpose: the payload needs a bypass actor id"
+echo "     that differs per repository, and a wrong one locks releases out."
+echo
+echo "  2. The default branch. Set it to develop in the repository settings if you"
+echo "     want new pull requests to target it by default."

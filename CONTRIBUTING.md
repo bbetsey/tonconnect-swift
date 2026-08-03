@@ -54,13 +54,19 @@ The package follows [Semantic Versioning](https://semver.org). While the major
 number is `0`, the promise is deliberately weaker: a minor bump may break API,
 and that is what `0.x` means to everyone consuming it.
 
+Releasing is a maintainer action — see below — but anyone can ask for one. If a
+merged change is worth shipping, say so in the pull request, or open an issue
+that lists what is waiting on `develop`.
+
+### For maintainers
+
 A release is a pull request from `develop` into `main`. After it merges, tag the
-merge commit on `main` — SwiftPM discovers versions from tags, and a repository
-without tags has no versions at all:
+merge commit on `main`: SwiftPM discovers versions from tags, and a repository
+without tags has no versions at all.
 
 ```bash
 git switch main && git pull
-git tag 0.2.0
+git tag -a 0.2.0 -m "0.2.0 — <what changed>"
 git push origin 0.2.0
 ```
 
@@ -72,8 +78,12 @@ Which number to move:
 - **major** — held back for `1.0.0`, the point at which the public API is
   something we are prepared to keep.
 
-Tags are annotated with what changed; the pull request that produced the release
-is the long version, so keep its description worth reading.
+Note that tags are NOT covered by branch protection: `refs/tags/*` is a separate
+namespace, so protecting `main` does not stop anyone with write access from
+pushing a tag. If that matters, add a repository ruleset targeting tags with
+"restrict creations" — the modern replacement for the deprecated tag protection
+rules. Contributors working from a fork have no push access at all and cannot
+create tags either way.
 
 ## Building and testing
 
