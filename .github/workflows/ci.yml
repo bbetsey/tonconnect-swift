@@ -45,9 +45,15 @@ jobs:
           case "$head" in
             feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
               echo "ok: $head" ;;
+            main)
+              # The back-merge after a release: main carries the merge commit that
+              # closed the release, and develop needs it to stay a superset. Without
+              # this case the rules would forbid the very thing they make necessary.
+              echo "ok: back-merge main -> develop" ;;
             *)
               echo "::error::branch '$head' does not follow <type>/<slug>."
               echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
+              echo "::error::(main is allowed too, for the back-merge after a release.)"
               exit 1 ;;
           esac
 
