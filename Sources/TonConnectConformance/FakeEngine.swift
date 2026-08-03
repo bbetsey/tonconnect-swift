@@ -12,6 +12,7 @@ public final class FakeEngine: TonConnectEngine, @unchecked Sendable {
     private var _hasSavedSession = false
     private var _lastConnectSource: WalletConnectionSource?
     private var _lastConnectItems: [ConnectItem] = []
+    private var _lastSentTransaction: SendTransactionPayload?
 
     /// Canned responses — set before use; a test double is single-threaded per test.
     public var cannedConnectEvent: ConnectEvent
@@ -26,6 +27,13 @@ public final class FakeEngine: TonConnectEngine, @unchecked Sendable {
     public var hasSavedSession: Bool {
         lock.lock(); defer { lock.unlock() }
         return _hasSavedSession
+    }
+
+    /// The payload of the most recent sendTransaction — lets a test tell a resent
+    /// payload apart from a rebuilt one.
+    public var lastSentTransaction: SendTransactionPayload? {
+        lock.lock(); defer { lock.unlock() }
+        return _lastSentTransaction
     }
 
     public var lastConnectSource: WalletConnectionSource? {
@@ -112,6 +120,7 @@ public final class FakeEngine: TonConnectEngine, @unchecked Sendable {
     public func sendTransaction(_ payload: SendTransactionPayload) async throws -> WalletResponse {
         lock.lock()
         _recordedCalls.append("sendTransaction")
+        _lastSentTransaction = payload
         lock.unlock()
         return cannedSendTransactionResponse
     }

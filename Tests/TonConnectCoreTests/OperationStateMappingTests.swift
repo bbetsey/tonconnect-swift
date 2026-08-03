@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import TonConnectCore
 import TonConnectConformance
@@ -125,6 +126,43 @@ struct OperationFacadeTests {
         #expect(facade.operation == .walletError(message: "bad"))
     }
 
+    /// The defect this overload exists for: a captured payload carries the
+    /// `validUntil` computed at the first attempt, so a retry minutes later sends a
+    /// transaction the wallet must reject as expired.
+    @Test func testRetryWithAPayloadClosureRebuildsThePayload() async throws {
+        let engine = FakeEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        let builds = Counter()
+        _ = try await facade.sendTransaction {
+            builds.increment()
+            return SendTransactionPayload(validUntil: builds.value, network: nil, from: nil, messages: [])
+        }
+        #expect(builds.value == 1)
+
+        facade.retryLastOperation()
+        for _ in 0..<200 {
+            if builds.value == 2, facade.operation == .success(kind: .sendTransaction) { break }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        // Built a second time — a fresh validUntil went out, not the stale one.
+        #expect(builds.value == 2)
+    }
+
+    /// The value overload keeps its old contract: the very same payload is resent.
+    @Test func testRetryWithAPayloadValueResendsTheSamePayload() async throws {
+        let engine = FakeEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        let payload = SendTransactionPayload(validUntil: 42, network: nil, from: nil, messages: [])
+        _ = try await facade.sendTransaction(payload)
+
+        facade.retryLastOperation()
+        for _ in 0..<200 {
+            if engine.recordedCalls.filter({ $0 == "sendTransaction" }).count == 2 { break }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(engine.lastSentTransaction?.validUntil == 42)
+    }
+
     @Test func testClearOperationResetsToNil() async throws {
         let facade = TonConnect(engine: FakeEngine(), autoRestore: false)
         _ = try await facade.sendTransaction(makePayload())
@@ -164,4 +202,13 @@ struct OperationFacadeTests {
         try await facade.disconnect()
         #expect(facade.operation == nil)
     }
+}
+
+/// A tiny thread-safe counter. The payload closure is @Sendable — it cannot reach
+/// main-actor state — so the counter carries its own lock.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return _value }
+    func increment() { lock.lock(); _value += 1; lock.unlock() }
 }
