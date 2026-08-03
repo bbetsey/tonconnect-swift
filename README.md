@@ -175,4 +175,3 @@ This package redistributes third-party software, including a bundled build of
 the official TON Connect JavaScript SDK and the TweetNaCl C reference
 implementation. See [NOTICE](NOTICE) and
 [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt).
-x
