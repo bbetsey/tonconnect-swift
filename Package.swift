@@ -15,6 +15,11 @@ let package = Package(
         .library(name: "TonConnectSDK", targets: ["TonConnectSDK"]),
         .library(name: "TonConnectNativeEngine", targets: ["TonConnectNativeEngine"]),
     ],
+    dependencies: [
+        // Adds `swift package generate-documentation`. It is a build-time plugin:
+        // it produces no code, and nothing it brings is linked into a consumer.
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.0.0"),
+    ],
     targets: [
         .target(name: "TonConnectCore"),
         .target(name: "TonConnectConformance", dependencies: ["TonConnectCore"]),

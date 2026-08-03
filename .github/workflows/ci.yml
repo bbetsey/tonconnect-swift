@@ -1,15 +1,56 @@
 name: CI
 
+# What CI can and cannot do here, stated plainly:
+#
+# It CAN check every pull request — the build, the tests, and the branch rules
+# below — and refuse to go green when a rule is broken.
+#
+# It CANNOT prevent a push. A workflow runs after the push has landed, so the
+# real guard on `main` is branch protection in the repository settings, which
+# uses these checks as its required status checks. See Tools/protect-branches.sh.
+
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Only develop, release/* or hotfix/* may target main
+        if: github.base_ref == 'main'
+        run: |
+          head='${{ github.head_ref }}'
+          case "$head" in
+            develop|release/*|hotfix/*)
+              echo "ok: $head -> main" ;;
+            *)
+              echo "::error::main takes develop, release/* or hotfix/* — got '$head'."
+              echo "::error::Merge the work into develop first; main only ever receives a release."
+              exit 1 ;;
+          esac
+
+      - name: Branches targeting develop follow <type>/<slug>
+        if: github.base_ref == 'develop'
+        run: |
+          head='${{ github.head_ref }}'
+          case "$head" in
+            feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
+              echo "ok: $head" ;;
+            *)
+              echo "::error::branch '$head' does not follow <type>/<slug>."
+              echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
+              exit 1 ;;
+          esac
+
   test:
     name: Build and test
     runs-on: macos-latest
@@ -26,3 +67,25 @@ jobs:
       # bridge over the network and would make CI depend on someone else's uptime.
       - name: Test
         run: swift test
+
+  docs:
+    name: Documentation
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # --warnings-as-errors is DocC's own flag: it fails on DocC diagnostics — a
+      # link to a symbol that was renamed, a page nothing curates — and says
+      # nothing about Swift compiler warnings, which are a separate conversation.
+      #
+      # The first version of this step grepped the whole log for "warning:" and
+      # went red on `onChange(of:perform:)` deprecations instead. Those are not
+      # fixable here: the two-parameter onChange starts at iOS 17 and this package
+      # supports iOS 16, so the deprecated call is deliberate.
+      - name: Build DocC, failing on documentation warnings
+        run: |
+          for target in TonConnectCore TonConnectUI; do
+            echo "::group::$target"
+            swift package generate-documentation --target "$target" --warnings-as-errors
+            echo "::endgroup::"
+          done

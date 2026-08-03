@@ -3,6 +3,88 @@
 Thanks for taking a look. This document is short on ceremony and long on the two
 or three conventions that actually matter here.
 
+## Branches
+
+`main` holds released code and nothing else. Every change reaches it the same
+way: a branch off `develop`, a pull request into `develop`, and later a release
+pull request from `develop` into `main`. Nobody pushes to `main` directly, and
+nobody pushes to `develop` directly either — both are entered through a pull
+request so CI has a chance to speak first.
+
+```
+main      ──●───────────────────●──────────  releases only, tagged
+             \                 /
+develop   ────●───●───●───●───●────────────  integration
+                   \ /   \ /
+feature        feat/…   fix/…               short-lived, one concern each
+```
+
+Name a branch `<type>/<slug>`, with the same types the commit messages use:
+
+| Type | For |
+|---|---|
+| `feat/` | new behaviour a consumer can see |
+| `fix/` | a defect |
+| `docs/` | documentation and comments |
+| `test/` | tests only |
+| `refactor/` | behaviour unchanged, shape improved |
+| `perf/` | measurably faster or lighter |
+| `build/` | the package manifest, the bundle tooling |
+| `ci/` | the workflow itself |
+| `chore/` | everything else that is not product code |
+| `release/` | preparing a version for `main` |
+| `hotfix/` | an urgent fix that goes straight to `main`, then back into `develop` |
+
+```bash
+git switch develop && git pull
+git switch -c fix/telegram-wake-link
+```
+
+CI checks these names on every pull request and refuses the ones that do not
+match, so a typo is caught before review rather than after the merge.
+
+Feature branches are **squash-merged**: one branch becomes one commit on
+`develop`, and the commit message is the pull request title. Write that title as
+the commit you would want to read a year from now — the messy commits inside the
+branch are yours to make freely, since they disappear on merge.
+
+## Releases and versioning
+
+The package follows [Semantic Versioning](https://semver.org). While the major
+number is `0`, the promise is deliberately weaker: a minor bump may break API,
+and that is what `0.x` means to everyone consuming it.
+
+Releasing is a maintainer action — see below — but anyone can ask for one. If a
+merged change is worth shipping, say so in the pull request, or open an issue
+that lists what is waiting on `develop`.
+
+### For maintainers
+
+A release is a pull request from `develop` into `main`. After it merges, tag the
+merge commit on `main`: SwiftPM discovers versions from tags, and a repository
+without tags has no versions at all.
+
+```bash
+git switch main && git pull
+git tag -a 0.2.0 -m "0.2.0 — <what changed>"
+git push origin 0.2.0
+```
+
+Which number to move:
+
+- **patch** (`0.1.0` → `0.1.1`) — fixes only, nothing added or renamed;
+- **minor** (`0.1.0` → `0.2.0`) — new API, or a change to existing API while
+  still on `0.x`;
+- **major** — held back for `1.0.0`, the point at which the public API is
+  something we are prepared to keep.
+
+Note that tags are NOT covered by branch protection: `refs/tags/*` is a separate
+namespace, so protecting `main` does not stop anyone with write access from
+pushing a tag. If that matters, add a repository ruleset targeting tags with
+"restrict creations" — the modern replacement for the deprecated tag protection
+rules. Contributors working from a fork have no push access at all and cannot
+create tags either way.
+
 ## Building and testing
 
 ```bash
@@ -18,6 +100,40 @@ real bridge over the network:
 
 ```bash
 TC_LIVE_BRIDGE_SMOKE=1 swift test --filter LiveBridgeSmokeTests
+```
+
+## Documentation
+
+The public API is documented with doc comments, and two modules carry a
+documentation catalog with a landing page: `TonConnectCore` and `TonConnectUI`.
+
+```bash
+swift package generate-documentation --target TonConnectCore
+swift package --disable-sandbox preview-documentation --target TonConnectCore
+```
+
+CI builds both with `--warnings-as-errors` and **fails on any DocC warning**.
+That is not pedantry: a warning is how you learn that a doc comment points at a
+symbol somebody renamed, and a link rotting silently is worse than a build going
+red. The flag is DocC's own, so it judges documentation only — Swift compiler
+warnings are a separate conversation and do not fail this job. Some of them
+cannot be fixed anyway: the two-parameter `onChange` starts at iOS 17, and this
+package supports iOS 16.
+
+When you add a public type, curate it under a `## Topics` heading in the
+catalog's landing page. Anything left uncurated still appears, but in an
+alphabetical pile rather than next to the things it belongs with.
+
+Note that symbols behind `#if canImport(UIKit)` — `SystemWalletOpener`, for one —
+do not exist in documentation built on macOS, which is where CI builds it. Do not
+curate them, or the build turns red on a symbol that is simply not there.
+
+To publish the result as a static site:
+
+```bash
+swift package --allow-writing-to-directory ./docs generate-documentation \
+  --target TonConnectCore --output-path ./docs \
+  --transform-for-static-hosting --hosting-base-path tonconnect-swift
 ```
 
 ## Test naming
@@ -98,7 +214,7 @@ protocol's prove nothing.
 
 ## Pull requests
 
-- one concern per pull request;
+- one concern per pull request, on a branch named for that concern;
 - `swift test` green, and new behaviour covered by a test that fails without the
   change;
 - if the change came from watching a real wallet misbehave, put the observed
