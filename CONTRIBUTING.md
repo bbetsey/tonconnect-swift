@@ -102,6 +102,36 @@ real bridge over the network:
 TC_LIVE_BRIDGE_SMOKE=1 swift test --filter LiveBridgeSmokeTests
 ```
 
+## Documentation
+
+The public API is documented with doc comments, and two modules carry a
+documentation catalog with a landing page: `TonConnectCore` and `TonConnectUI`.
+
+```bash
+swift package generate-documentation --target TonConnectCore
+swift package --disable-sandbox preview-documentation --target TonConnectCore
+```
+
+CI builds both and **fails on any DocC warning**. That is not pedantry: a warning
+is how you learn that a doc comment points at a symbol somebody renamed, and a
+link rotting silently is worse than a build going red.
+
+When you add a public type, curate it under a `## Topics` heading in the
+catalog's landing page. Anything left uncurated still appears, but in an
+alphabetical pile rather than next to the things it belongs with.
+
+Note that symbols behind `#if canImport(UIKit)` — `SystemWalletOpener`, for one —
+do not exist in documentation built on macOS, which is where CI builds it. Do not
+curate them, or the build turns red on a symbol that is simply not there.
+
+To publish the result as a static site:
+
+```bash
+swift package --allow-writing-to-directory ./docs generate-documentation \
+  --target TonConnectCore --output-path ./docs \
+  --transform-for-static-hosting --hosting-base-path tonconnect-swift
+```
+
 ## Test naming
 
 Apple's Swift API Design Guidelines, applied to test names: camelCase, no

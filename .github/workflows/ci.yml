@@ -67,3 +67,26 @@ jobs:
       # bridge over the network and would make CI depend on someone else's uptime.
       - name: Test
         run: swift test
+
+  docs:
+    name: Documentation
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # DocC warnings are the only signal that a doc comment references a symbol
+      # that was renamed or removed, so they fail the build rather than scroll by.
+      - name: Build DocC and treat warnings as failures
+        run: |
+          set -o pipefail
+          status=0
+          for target in TonConnectCore TonConnectUI; do
+            echo "::group::$target"
+            swift package generate-documentation --target "$target" 2>&1 | tee "docc-$target.log"
+            echo "::endgroup::"
+            if grep -q "warning:" "docc-$target.log"; then
+              echo "::error::DocC reported warnings for $target"
+              status=1
+            fi
+          done
+          exit $status
