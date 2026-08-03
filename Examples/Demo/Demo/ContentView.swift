@@ -77,18 +77,26 @@ struct ContentView: View {
                 Button("Send Transaction") {
                     // the recipient is your own address, so a live run costs nothing
                     guard let recipient = tonConnect.account?.userFriendlyAddress() else { return }
-                    let payload = SendTransactionPayload(
-                        validUntil: Int(Date().timeIntervalSince1970) + 300,
-                        network: tonConnect.account?.network,   // taken from the session, never hard-coded
-                        from: nil,
-                        messages: [SendTransactionPayload.Message(
-                            address: recipient,
-                            amount: nanotonAmount,
-                            payload: nil,
-                            stateInit: nil)]
-                    )
+                    let network = tonConnect.account?.network   // from the session, never hard-coded
+                    let amount = nanotonAmount
                     Task {
-                        do { _ = try await tonConnect.sendTransaction(payload) }
+                        // The closure overload, because validUntil expires: a Retry
+                        // after a connection problem can land minutes later, and a
+                        // replayed deadline would reach the wallet already stale.
+                        do {
+                            _ = try await tonConnect.sendTransaction {
+                                SendTransactionPayload(
+                                    validUntil: Int(Date().timeIntervalSince1970) + 300,
+                                    network: network,
+                                    from: nil,
+                                    messages: [SendTransactionPayload.Message(
+                                        address: recipient,
+                                        amount: amount,
+                                        payload: nil,
+                                        stateInit: nil)]
+                                )
+                            }
+                        }
                         catch { } // the operation sheet shows the outcome
                     }
                 }

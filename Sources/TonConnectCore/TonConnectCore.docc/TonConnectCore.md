@@ -12,8 +12,8 @@ ran on a JavaScript core first and on the native one later.
 
 Two ideas are worth knowing before reading further.
 
-**A refusal is an outcome, not an error.** ``TonConnect/sendTransaction(_:)`` and
-``TonConnect/signData(_:)`` return a ``WalletResponse``; a user pressing Cancel
+**A refusal is an outcome, not an error.** `TonConnect.sendTransaction(_:)` and
+`TonConnect.signData(_:)` return a ``WalletResponse``; a user pressing Cancel
 comes back as `WalletResponse.error`, not as a thrown Swift error. Throwing is
 reserved for a request that never got an answer at all.
 

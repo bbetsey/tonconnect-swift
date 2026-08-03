@@ -98,18 +98,23 @@ struct ContentView: View {
 ## Sending a transaction
 
 ```swift
-let payload = SendTransactionPayload(
-    validUntil: Int(Date().timeIntervalSince1970) + 300,
-    network: tonConnect.account?.network,
-    from: nil,
-    messages: [SendTransactionPayload.Message(
-        address: "UQ…",
-        amount: "10000000",      // nanotons
-        payload: nil,
-        stateInit: nil)]
-)
-_ = try await tonConnect.sendTransaction(payload)
+_ = try await tonConnect.sendTransaction {
+    SendTransactionPayload(
+        validUntil: Int(Date().timeIntervalSince1970) + 300,
+        network: account.network,
+        from: nil,
+        messages: [SendTransactionPayload.Message(
+            address: "UQ…",
+            amount: "10000000",      // nanotons
+            payload: nil,
+            stateInit: nil)]
+    )
+}
 ```
+
+The closure runs again if the user retries after a connection problem, so
+`validUntil` is recomputed rather than replayed. Passing a payload by value works
+too, and then a retry resends it verbatim — expiry included.
 
 ## Signing data
 
