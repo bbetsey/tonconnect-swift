@@ -1,0 +1,12 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# JS build tooling (Tools/jsbridge) — the bundle it produces IS checked in,
+# its dependencies are not.
+node_modules/

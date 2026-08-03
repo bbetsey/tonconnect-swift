@@ -1,0 +1,88 @@
+{
+  "protocolVersion": "@tonconnect/protocol@3.0.0 / tweetnacl-js@1.0.3",
+  "generated": "by Tools/jsbridge/generate-vectors.mjs — regenerate whenever package-lock.json changes",
+  "keypairs": [
+    {
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "publicKey": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+      "secretKey": "0101010101010101010101010101010101010101010101010101010101010101"
+    },
+    {
+      "seed": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "publicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "secretKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+    },
+    {
+      "seed": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "publicKey": "4844118db6d430d139e75e2be57a9d6829ff70f7addb5ef56e72127717e1024d",
+      "secretKey": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    }
+  ],
+  "encryptCases": [
+    {
+      "senderSecretKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "receiverPublicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "nonce": "000102030405060708090a0b0c0d0e0f1011121314151617",
+      "plaintext": "hello",
+      "expectedWire": "000102030405060708090a0b0c0d0e0f1011121314151617da5f8ba57e6011a50e4ac278877fe320e668f09dd1"
+    },
+    {
+      "senderSecretKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "receiverPublicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "nonce": "ffeeddccbbaa99887766554433221100ffeeddccbbaa9988",
+      "plaintext": "",
+      "expectedWire": "ffeeddccbbaa99887766554433221100ffeeddccbbaa9988002b8713507cc763d7132eea53481c9a"
+    },
+    {
+      "senderSecretKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "receiverPublicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "nonce": "000102030405060708090a0b0c0d0e0f1011121314151617",
+      "plaintext": "привет 🌍",
+      "expectedWire": "000102030405060708090a0b0c0d0e0f1011121314151617e6b41f115a2b8f4400787a4c444918b25eb24d716e650c10a452833bdaa606cad0"
+    },
+    {
+      "senderSecretKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "receiverPublicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "nonce": "ffeeddccbbaa99887766554433221100ffeeddccbbaa9988",
+      "plaintext": "{\"method\":\"sendTransaction\",\"params\":[\"...\"],\"id\":\"1\"}",
+      "expectedWire": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99882aa91d852ba2282f5f68a0d78893aba6718b766ebd03748532ca413cf5a2cd2f61383c81cfb0ff0d127a01048a91c740155cfffdf2d72127b604b73fd33952b3a08f67331bcb"
+    },
+    {
+      "senderSecretKey": "0101010101010101010101010101010101010101010101010101010101010101",
+      "receiverPublicKey": "605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23c",
+      "nonce": "000102030405060708090a0b0c0d0e0f1011121314151617",
+      "plaintext": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expectedWire": "000102030405060708090a0b0c0d0e0f10111213141516170e86a94790b9a787dca0a31bd49b45bbf675e489c6a5a4da0c9f2ac1822ee13e255b6e815c109a00f6de74eb3b280ea2aaf04a3076b976d9a8eee9e60bd600241467bfd71abe405a80dca8cb99d6bfc5f549099f8fee86cbd2e1177c4e24f546420426bcfb79ec4dc3af2db900a1fb46da260c92b60e44564f25455e8d428680089c44546f5bf23e9de441c367e7fd7be16bb33eb5aacfccf07796b552c4172fddd7ab1ee38957fafbeab38311bbbffe142bb3d96f04ead6c0df7ca6a77f5ba1ac19adf73d13f2075895a0309e07d1136442d36bc4d03cf14e4c27dcd30c42dfd1df23c6c234e988abd36f44180399d5cbea17c65632314806fed946774ce256ef94b0e73c520574cf73cb84eadf0b1305c4ff6a23dca76a803087e9247c07721be64c09e01374adfa7146bb6283ca40c8eaebd0326cd829d7f0980420ef9aba098daa4e4329d3446fc42f5b9ad28b7bdc6e8a5d749e11c1b93a8449dab0392a2fff6250d77006f8ce0d737aa465fe916f075a87515cb6a0913a693adf2cd6c21b5d2d777d8b9d7fcca2326b069bdb50b316140c2c5add3e2b098a796990a2fe64cb2e8e7139ab89ad8215e74981b476301029c236fc600b81242ae65604b110508f02ce3daa74c193699302c3f3b087df8cf92b104b1431cc967fd70a01e8cc9551fca794a8b3f780162446b892def064add9c663393b610f85d73014f946068f3612c43212d262d523207a7e813c186e2917ce445202d3da623f923211bc35fd244370bddaa1ceca48a889174da97396a80f057c7ce9041161b7282d1a018ba1dceec7e7a213df80246995046c56861c2bd87cde37d901f00a874a667179bf690f6af94fdee69d7aaa073bc6429513bd3cb22fb32b6901de9912b45212723fc0a44495b31a0f60a3da2e396c7fb42cbbba8a233dd8911dce18e25be54c66507bacfe46e18d2d507a7e2f49b70503fbc419bc02d194f24589a1ee6468a203b951447c24eaa391565b49507747ee519db9ae6d4652fc6de53f672aef5ed39ac88a30ed9bd7b8ffd96f8974aba714d6578c31244f5eda357879b48850d5e1ae960b76396c2ce02db4be20e2b85eb49afc44c7b9abbe7814f9a981137b2a5ca271985b079f2f0af69d06df021d6c09732f9eb11b8a555abb2d3223360e3503e383ea768d60b7740a955a684ece54559d4ca2e0ad29c2ce1207bfd60043e4340a4b5923e3e365d09e853c04c3f47fe7db77f313aa1cc2893a5560b16d366da507f8d25530cd02b4e7cdaa8237bbf3327ebeecbdb2b5a85b2be7fd024ab185507f8e92d3c59e43e3adb9ffd4c6f1fc29de61e94624a59a09b708a2a0e925d70cb6331f30857d2ad38f3915251e836085e156d10b951f015a1cc4f1b7575bfd2e6c4176549378506907025ae7cae2d159ea06477d22b9a1eaec00a860f90e2c49743ff0c244a926c7cf9b9ee7844c6f26b9a7"
+    }
+  ],
+  "decryptFailureCases": [
+    {
+      "description": "corrupted last ciphertext byte — Poly1305 tag must fail",
+      "wireHex": "000102030405060708090a0b0c0d0e0f1011121314151617f5158b17c6ddf559045ee880e19b00c1fa6cf181dbaffccfee",
+      "senderPublicKey": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+      "receiverSecretKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "expectThrow": true
+    },
+    {
+      "description": "wrong sender public key",
+      "wireHex": "000102030405060708090a0b0c0d0e0f1011121314151617f5158b17c6ddf559045ee880e19b00c1fa6cf181dbaffccf11",
+      "senderPublicKey": "4844118db6d430d139e75e2be57a9d6829ff70f7addb5ef56e72127717e1024d",
+      "receiverSecretKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "expectThrow": true
+    },
+    {
+      "description": "truncated below nonce+tag (39 bytes < 24+16)",
+      "wireHex": "000102030405060708090a0b0c0d0e0f1011121314151617f5158b17c6ddf559045ee880e19b00",
+      "senderPublicKey": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+      "receiverSecretKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "expectThrow": true
+    },
+    {
+      "description": "empty wire",
+      "wireHex": "",
+      "senderPublicKey": "a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209",
+      "receiverSecretKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "expectThrow": true
+    }
+  ]
+}

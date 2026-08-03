@@ -1,0 +1,48 @@
+TonConnect for Swift
+Copyright 2026 bbetsey
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product redistributes third-party software, as described below. Verbatim
+license texts for the components that require them are in THIRD-PARTY-LICENSES.txt.
+
+================================================================================
+1. TON Connect JavaScript SDK
+   Sources/TonConnectJSCoreEngine/Resources/tonconnect-sdk.bundle.js
+================================================================================
+
+Copyright 2022 tonkeeper
+Licensed under the Apache License, Version 2.0.
+
+Upstream: https://github.com/ton-connect/sdk
+
+This file is NOT upstream source. It is a build artifact produced with
+esbuild 0.24.0 (--bundle --format=iife --target=es2017) from a small TypeScript
+entry point of our own, which imports the packages listed below. The upstream
+sources themselves are used unmodified; the bundling step is the only change.
+
+Packages contained in that bundle:
+
+  @tonconnect/sdk                     4.0.0  Apache-2.0  Copyright 2022 tonkeeper
+  @tonconnect/protocol                3.0.0  Apache-2.0  Copyright 2022 tonkeeper
+  @tonconnect/isomorphic-eventsource  0.0.2  Apache-2.0  Copyright 2022 tonkeeper
+  @tonconnect/isomorphic-fetch        0.0.3  Apache-2.0  Copyright 2022 tonkeeper
+  eventsource                         2.0.2  MIT         Copyright (c) EventSource GitHub organisation
+  tweetnacl (JavaScript)              1.0.3  Unlicense   (public domain)
+
+================================================================================
+2. TweetNaCl, C reference implementation
+   Sources/CTweetNacl/tweetnacl.c
+   Sources/CTweetNacl/include/tweetnacl.h
+================================================================================
+
+TweetNaCl is released into the public domain by its authors.
+
+Vendored unchanged from https://tweetnacl.cr.yp.to/20140427/ — 809 and 272 lines
+respectively, verified against those counts when vendored and again before
+release.
+
+Sources/CTweetNacl/randombytes_shim.c and its header are NOT part of TweetNaCl.
+They are our own code: TweetNaCl requires the host to supply the `randombytes`
+symbol, and the shim provides it together with a seam that lets Swift install the
+randomness source. They are covered by this repository's Apache-2.0 license.
