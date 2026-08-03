@@ -74,6 +74,24 @@ jobs:
       - name: Test
         run: swift test
 
+  example:
+    name: Example app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The example depends on the package by relative path, so this build is an
+      # integration test of the public API: rename something a consumer uses and
+      # this job goes red, long before a release could carry the break outwards.
+      - name: Build Examples/Demo against the package in this repo
+        working-directory: Examples/Demo
+        run: |
+          xcodebuild build \
+            -scheme Demo \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+
   docs:
     name: Documentation
     runs-on: macos-latest

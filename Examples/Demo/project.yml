@@ -1,0 +1,31 @@
+name: Demo
+options:
+  bundleIdPrefix: com.tonconnect.swift.example
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  TonConnect:
+    path: ../..                    # the package this example demonstrates, right here in the repo
+targets:
+  Demo:
+    type: application
+    platform: iOS
+    sources: [Demo]
+    info:
+      path: Demo/Info.plist
+      properties:
+        CFBundleDisplayName: TC Demo
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tonconnect.swift.example
+            CFBundleURLSchemes: [tcdemo]   # инфраструктура ret=url на будущее (сейчас ret=back — no-op)
+    dependencies:
+      - package: TonConnect
+        product: TonConnectCore
+      - package: TonConnect
+        product: TonConnectUI
+      - package: TonConnect
+        product: TonConnectSDK
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.tonconnect.swift.example
+      # DEVELOPMENT_TEAM подставишь в Xcode (Signing & Capabilities) при сборке на девайс

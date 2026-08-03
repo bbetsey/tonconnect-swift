@@ -126,6 +126,13 @@ A wallet's refusal is not an error you have to catch: `sendTransaction` and
 outcome — succeeded, declined by the user, refused by the wallet, or a
 connection problem with a retry.
 
+## The example app
+
+[`Examples/Demo`](Examples/Demo) is a small SwiftUI app that runs the whole flow
+against a real wallet — connect, restore, send, sign, disconnect. It builds
+against the package in this repository rather than a published version, so CI
+uses it as an integration test of the public API.
+
 ## What is inside
 
 | Product | What it is |
