@@ -19,7 +19,7 @@ wallet picker, the connect button and the operation sheet are plain SwiftUI view
 
 ## Requirements
 
-- iOS 16+ / macOS 14+
+- iOS 16+
 - Swift 5.10+
 - A TON Connect manifest hosted over HTTPS
 

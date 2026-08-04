@@ -13,6 +13,13 @@ struct StorageParityTests {
 
     struct KeychainStorageFactory: StorageFactory {
         let label = "KeychainStorage"
+        // Deprecated code may call deprecated code without a warning. The notice on
+        // KeychainStorage's initializer is aimed at consumers building for macOS;
+        // this suite has to exercise the type on the very host it warns about, so it
+        // opts out here rather than letting every local build carry the warning.
+        #if os(macOS)
+        @available(macOS, deprecated: 14)
+        #endif
         func makeStorage() async throws -> any TonConnectStorage {
             KeychainStorage(service: "tonconnect-swift.tests")
         }
@@ -26,6 +33,9 @@ struct StorageParityTests {
     /// visible skip on errSecMissingEntitlement (-34018); every other probe error
     /// falls through to the real assertions. True Keychain parity is re-verified
     /// by a hosted demo app, which carries real entitlements.
+    #if os(macOS)
+    @available(macOS, deprecated: 14)
+    #endif
     @Test func testKeychainStoragePassesStorageConformanceSuiteWhenAvailable() async throws {
         let factory = KeychainStorageFactory()
         let probe = try await factory.makeStorage()
