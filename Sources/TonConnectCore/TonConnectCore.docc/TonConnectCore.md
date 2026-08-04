@@ -60,6 +60,16 @@ handed to you stay exact, including the ones the wallet got wrong.
 - ``KeychainStorage``
 - ``InMemoryStorage``
 
+`KeychainStorage` is written for iOS, where there is one keychain and
+`kSecAttrAccessibleAfterFirstUnlock` means what it says. macOS has two, and these
+calls land in the older file-based one, where that accessibility attribute has no
+effect. Switching to the data protection keychain would fix that and is
+deliberately not done: it is reachable only by code that can carry an entitlement
+— a main executable — so a library cannot request it on its own behalf, and a
+host without one gets `errSecMissingEntitlement` (-34018) on every write. Treat
+macOS as unsupported: the package builds there so that `swift build`,
+`swift test` and DocC have a platform to run on, not because the flow works.
+
 ### Errors
 
 - ``TonConnectError``
