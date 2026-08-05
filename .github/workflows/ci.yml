@@ -45,9 +45,15 @@ jobs:
           case "$head" in
             feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
               echo "ok: $head" ;;
+            main)
+              # The back-merge after a release: main carries the merge commit that
+              # closed the release, and develop needs it to stay a superset. Without
+              # this case the rules would forbid the very thing they make necessary.
+              echo "ok: back-merge main -> develop" ;;
             *)
               echo "::error::branch '$head' does not follow <type>/<slug>."
               echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
+              echo "::error::(main is allowed too, for the back-merge after a release.)"
               exit 1 ;;
           esac
 
@@ -67,6 +73,24 @@ jobs:
       # bridge over the network and would make CI depend on someone else's uptime.
       - name: Test
         run: swift test
+
+  example:
+    name: Example app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The example depends on the package by relative path, so this build is an
+      # integration test of the public API: rename something a consumer uses and
+      # this job goes red, long before a release could carry the break outwards.
+      - name: Build Examples/Demo against the package in this repo
+        working-directory: Examples/Demo
+        run: |
+          xcodebuild build \
+            -scheme Demo \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
 
   docs:
     name: Documentation

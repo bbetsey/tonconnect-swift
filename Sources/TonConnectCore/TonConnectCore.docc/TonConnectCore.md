@@ -12,8 +12,8 @@ ran on a JavaScript core first and on the native one later.
 
 Two ideas are worth knowing before reading further.
 
-**A refusal is an outcome, not an error.** ``TonConnect/sendTransaction(_:)`` and
-``TonConnect/signData(_:)`` return a ``WalletResponse``; a user pressing Cancel
+**A refusal is an outcome, not an error.** `TonConnect.sendTransaction(_:)` and
+`TonConnect.signData(_:)` return a ``WalletResponse``; a user pressing Cancel
 comes back as `WalletResponse.error`, not as a thrown Swift error. Throwing is
 reserved for a request that never got an answer at all.
 
@@ -59,6 +59,16 @@ handed to you stay exact, including the ones the wallet got wrong.
 - ``TonConnectStorage``
 - ``KeychainStorage``
 - ``InMemoryStorage``
+
+`KeychainStorage` is written for iOS, where there is one keychain and
+`kSecAttrAccessibleAfterFirstUnlock` means what it says. macOS has two, and these
+calls land in the older file-based one, where that accessibility attribute has no
+effect. Switching to the data protection keychain would fix that and is
+deliberately not done: it is reachable only by code that can carry an entitlement
+— a main executable — so a library cannot request it on its own behalf, and a
+host without one gets `errSecMissingEntitlement` (-34018) on every write. Treat
+macOS as unsupported: the package builds there so that `swift build`,
+`swift test` and DocC have a platform to run on, not because the flow works.
 
 ### Errors
 

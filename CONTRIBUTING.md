@@ -41,7 +41,10 @@ git switch -c fix/telegram-wake-link
 ```
 
 CI checks these names on every pull request and refuses the ones that do not
-match, so a typo is caught before review rather than after the merge.
+match, so a typo is caught before review rather than after the merge. One name
+outside the scheme is allowed into `develop`: `main` itself, for the back-merge
+that follows a release — `main` ends up holding the merge commit that closed it,
+and `develop` has to stay a superset of what has shipped.
 
 Feature branches are **squash-merged**: one branch becomes one commit on
 `develop`, and the commit message is the pull request title. Write that title as

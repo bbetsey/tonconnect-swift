@@ -8,8 +8,9 @@ crypto, the SSE bridge, the RPC envelope — is implemented in Swift, and the
 wallet picker, the connect button and the operation sheet are plain SwiftUI views.
 
 > **Status: pre-release.** The package works end to end and is exercised against
-> live wallets on a real device, but no version has been tagged yet and the
-> public API may still change.
+> live wallets on a real device. While the major version is zero the public API
+> may still change — but a release that breaks it is 1.0.0, not another 0.x, so
+> the version requirement below is safe to take as written.
 
 > **Unofficial.** This is an independent implementation, not affiliated with or
 > endorsed by the TON Foundation or tonkeeper. It implements the dApp side of the
@@ -19,7 +20,7 @@ wallet picker, the connect button and the operation sheet are plain SwiftUI view
 
 ## Requirements
 
-- iOS 16+ / macOS 14+
+- iOS 16+
 - Swift 5.10+
 - A TON Connect manifest hosted over HTTPS
 
@@ -29,7 +30,7 @@ Add the package with Swift Package Manager:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.1.0")
+    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.2.0")
 ]
 ```
 
@@ -98,18 +99,23 @@ struct ContentView: View {
 ## Sending a transaction
 
 ```swift
-let payload = SendTransactionPayload(
-    validUntil: Int(Date().timeIntervalSince1970) + 300,
-    network: tonConnect.account?.network,
-    from: nil,
-    messages: [SendTransactionPayload.Message(
-        address: "UQ…",
-        amount: "10000000",      // nanotons
-        payload: nil,
-        stateInit: nil)]
-)
-_ = try await tonConnect.sendTransaction(payload)
+_ = try await tonConnect.sendTransaction {
+    SendTransactionPayload(
+        validUntil: Int(Date().timeIntervalSince1970) + 300,
+        network: account.network,
+        from: nil,
+        messages: [SendTransactionPayload.Message(
+            address: "UQ…",
+            amount: "10000000",      // nanotons
+            payload: nil,
+            stateInit: nil)]
+    )
+}
 ```
+
+The closure runs again if the user retries after a connection problem, so
+`validUntil` is recomputed rather than replayed. Passing a payload by value works
+too, and then a retry resends it verbatim — expiry included.
 
 ## Signing data
 
@@ -125,6 +131,13 @@ A wallet's refusal is not an error you have to catch: `sendTransaction` and
 `signData` return a typed `WalletResponse`, and the operation sheet renders the
 outcome — succeeded, declined by the user, refused by the wallet, or a
 connection problem with a retry.
+
+## The example app
+
+[`Examples/Demo`](Examples/Demo) is a small SwiftUI app that runs the whole flow
+against a real wallet — connect, restore, send, sign, disconnect. It builds
+against the package in this repository rather than a published version, so CI
+uses it as an integration test of the public API.
 
 ## What is inside
 
@@ -156,9 +169,9 @@ swift test
 
 ## Wallets
 
-The flows have been exercised on a physical device against Tonkeeper,
-MyTonWallet, Gram Wallet, Tonhub and Telegram Wallet — connect, restore,
-send, sign and disconnect. Wallets disagree with the specification in small ways
+The flows — connect, restore, send, sign and disconnect — have been exercised on
+a physical device against live wallets, not only against a fake bridge.
+Wallets disagree with the specification in small ways
 (the type of a field, a non-spec error code, how a Telegram Mini App link carries
 its parameters), so the package is deliberately tolerant on the wire: an
 unexpected shape is accommodated rather than allowed to break a session.

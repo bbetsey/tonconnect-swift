@@ -1,0 +1,33 @@
+name: Demo
+options:
+  bundleIdPrefix: com.tonconnect.swift.example
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  TonConnect:
+    path: ../..                    # the package this example demonstrates, right here in the repo
+targets:
+  Demo:
+    type: application
+    platform: iOS
+    sources: [Demo]
+    info:
+      path: Demo/Info.plist
+      properties:
+        CFBundleDisplayName: TC Demo
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tonconnect.swift.example
+            CFBundleURLSchemes: [tcdemo]   # groundwork for a ret=url return strategy; the app currently uses ret=back
+    dependencies:
+      - package: TonConnect
+        product: TonConnectCore
+      - package: TonConnect
+        product: TonConnectUI
+      - package: TonConnect
+        product: TonConnectSDK
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.tonconnect.swift.example
+      # No DEVELOPMENT_TEAM on purpose: set your own in Xcode under Signing &
+      # Capabilities when you build this onto a device. CI builds with
+      # CODE_SIGNING_ALLOWED=NO and needs none.

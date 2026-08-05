@@ -119,12 +119,36 @@ public final class TonConnect: ObservableObject {
     /// "the user said no" is an outcome, not a failure. Throwing is reserved for
     /// the request never getting an answer at all. `operation` tracks the whole
     /// round trip for the UI.
+    /// A retry repeats THIS payload verbatim, `validUntil` included. When the
+    /// payload carries an expiry, take the closure overload below instead.
     public func sendTransaction(_ payload: SendTransactionPayload) async throws -> WalletResponse {
+        try await sendTransaction { payload }
+    }
+
+    /// Same request, but the payload is built at the moment of sending — including
+    /// when ``retryLastOperation()`` sends it again.
+    ///
+    /// Reach for this overload whenever the payload holds anything time-dependent,
+    /// `validUntil` above all. A retry can land minutes after the first attempt:
+    /// the user has to notice the failure, and a connection problem is exactly the
+    /// situation where they put the phone down and come back. Replaying a captured
+    /// `validUntil` then sends a transaction the wallet is obliged to reject as
+    /// expired — and the user is told "declined" with no way to guess why.
+    ///
+    /// ```swift
+    /// try await tonConnect.sendTransaction {
+    ///     SendTransactionPayload(validUntil: Int(Date().timeIntervalSince1970) + 300,
+    ///                            network: account.network, from: nil, messages: messages)
+    /// }
+    /// ```
+    public func sendTransaction(
+        _ makePayload: @escaping @Sendable () -> SendTransactionPayload
+    ) async throws -> WalletResponse {
         operation = .pending(kind: .sendTransaction)
         isOperationRequestSent = false
-        lastOperation = { [weak self] in _ = try? await self?.sendTransaction(payload) } // retry
+        lastOperation = { [weak self] in _ = try? await self?.sendTransaction(makePayload) }
         do {
-            let response = try await engine.sendTransaction(payload)
+            let response = try await engine.sendTransaction(makePayload())
             if case .error(let code, let message, _) = response {
                 operation = .failure(fromWalletResponseError: code, message: message)
             } else {
@@ -138,13 +162,22 @@ public final class TonConnect: ObservableObject {
     }
 
     /// Asks the wallet to sign text, raw bytes or a cell. Same contract as
-    /// ``sendTransaction(_:)``: a refusal arrives as `WalletResponse.error`.
+    /// `sendTransaction(_:)`: a refusal arrives as `WalletResponse.error`.
     public func signData(_ payload: SignDataPayload) async throws -> WalletResponse {
+        try await signData { payload }
+    }
+
+    /// Same request, but the payload is built at the moment of signing — including
+    /// on a retry. See the closure overload of `sendTransaction(_:)` for why a
+    /// captured payload can go stale between the first attempt and the second.
+    public func signData(
+        _ makePayload: @escaping @Sendable () -> SignDataPayload
+    ) async throws -> WalletResponse {
         operation = .pending(kind: .signData)
         isOperationRequestSent = false
-        lastOperation = { [weak self] in _ = try? await self?.signData(payload) }
+        lastOperation = { [weak self] in _ = try? await self?.signData(makePayload) }
         do {
-            let response = try await engine.signData(payload)
+            let response = try await engine.signData(makePayload())
             if case .error(let code, let message, _) = response {
                 operation = .failure(fromWalletResponseError: code, message: message)
             } else {

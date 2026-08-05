@@ -1,4 +1,5 @@
 import Foundation
+import os
 import TonConnectCore
 import TonConnectTransport
 #if canImport(UIKit)
@@ -18,6 +19,9 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
 
     private let manifestUrl: String
     private let store: NativeSessionStore
+    /// One subsystem for everything this package logs, so a consumer can filter
+    /// our noise out of theirs in one predicate.
+    private static let log = Logger(subsystem: "tonconnect-swift", category: "Session")
     private let opener: any WalletOpener
     private let returnStrategy: ReturnStrategy
     private let sessionConfiguration: URLSessionConfiguration
@@ -53,6 +57,30 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
             await operation()
         }
         lock.unlock()
+    }
+
+    /// Enqueues a store write on the same FIFO chain and REPORTS a failure
+    /// instead of swallowing it.
+    ///
+    /// A failed write is not fatal on its own — the session lives in memory and
+    /// the next event rewrites it — but silence here was indistinguishable from
+    /// success. A Keychain that refuses to store meant a session that vanished at
+    /// the next launch with nothing, anywhere, to explain why. The log line is the
+    /// minimum a consumer needs to see that it happened; filter it in Console with
+    /// subsystem `tonconnect-swift`.
+    private func persist(_ what: String,
+                         _ write: @escaping @Sendable (NativeSessionStore) async throws -> Void) {
+        let store = store
+        enqueuePersist {
+            do {
+                try await write(store)
+            } catch {
+                Self.log.error("""
+                    session store failed (\(what, privacy: .public)): \
+                    \(String(describing: error), privacy: .public)
+                    """)
+            }
+        }
     }
 
     /// Enqueue a RESULT-returning operation on the FIFO chain. The RPC-id
@@ -166,8 +194,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
             nextRpcRequestId: 1,
             lastWalletEventId: nil
         )
-        let store = store
-        enqueuePersist { try? await store.save(pendingSession) }
+        persist("save the pending session") { try await $0.save(pendingSession) }
 
         eventContinuation.yield(.connectLinkGenerated(link)) // clean, no ret (for QR/UI)
         // ret=back goes only into the opened link; NO await between the tap and open
@@ -304,8 +331,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         // frame's content, and reconnect after a cold restart must resume from the
         // last frame, not from connect.
         if let sseId, !sseId.isEmpty {
-            let store = store
-            enqueuePersist { try? await store.updateLastEventId(sseId) }
+            persist("update last event id") { try await $0.updateLastEventId(sseId) }
         }
         // Bridge heartbeat — a service "I'm alive" frame (data: heartbeat), NOT an
         // envelope. JS SDK parity (bundle.js: e.data === "heartbeat" → ignore);
@@ -360,7 +386,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         lastWalletEventId = id
         lock.unlock()
         let store = store
-        enqueuePersist { try? await store.updateLastWalletEventId(id) }
+        persist("update last wallet event id") { try await $0.updateLastWalletEventId(id) }
         return true
     }
 
@@ -414,8 +440,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
                 lastWalletEventId: walletEventId,
                 connectEventJSON: json
             )
-            let store = store
-            enqueuePersist { try? await store.save(session) }
+            persist("save the connected session") { try await $0.save(session) }
         }
         eventContinuation.yield(.connected(connectEvent))
         resolvePendingConnect(.success(connectEvent))
@@ -437,7 +462,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         guard let eventId, acceptWalletEventId(eventId) else { return }
         eventContinuation.yield(.disconnected)
         let store = store
-        enqueuePersist { try? await store.clear() } // only our own native key
+        persist("clear the session") { try await $0.clear() } // only our own native key
         lock.lock()
         let g = gateway
         gateway = nil
@@ -554,7 +579,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         } catch { throw NativeErrorMapper.map(error) }
 
         let store = store
-        enqueuePersist { try? await store.clear() }
+        persist("clear the session") { try await $0.clear() }
         lock.lock()
         let chain = persistChain
         let g = gateway
