@@ -29,7 +29,7 @@ Add the package with Swift Package Manager:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.1.0")
+    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.2.0")
 ]
 ```
 
