@@ -2,9 +2,11 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the major version is zero the public API may still move between minor
-versions; a change that would be breaking after 1.0 arrives as a minor bump here
-and is listed under Changed.
+While the major version is zero the public API may still change. Semantic
+Versioning permits a zero-major package to break its API in a minor release, and
+this one does not take that permission: a release that breaks the public API is
+1.0.0. That is what makes the `from:` requirement in the installation snippet
+safe to follow — every version it accepts is meant to keep compiling.
 
 ## 0.2.0 — 2026-08-05
 
