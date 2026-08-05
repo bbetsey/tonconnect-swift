@@ -8,6 +8,19 @@ this one does not take that permission: a release that breaks the public API is
 1.0.0. That is what makes the `from:` requirement in the installation snippet
 safe to follow — every version it accepts is meant to keep compiling.
 
+## 0.2.1 — 2026-08-05
+
+### Added
+
+- A Swift Package Index manifest, so the hosted documentation is generated for
+  iOS rather than for the index's default platform. On macOS the `TonConnectSDK`
+  archive is a single empty page — the target is one file behind
+  `#if canImport(UIKit)` — and the entry point the README opens with,
+  `TonConnect.init(manifestUrl:storage:)`, has nowhere to appear.
+
+No source changes: this release exists so that the documentation hosted for a
+tagged version is the documentation of the platform the package targets.
+
 ## 0.2.0 — 2026-08-05
 
 ### Added

@@ -1,0 +1,12 @@
+# Swift Package Index: build the hosted documentation.
+#
+# platform: ios is required, not cosmetic. The default is macOS, and TonConnectSDK
+# is a single file wrapped in #if canImport(UIKit) — built on macOS its archive is
+# one empty page, iOS gives it four, including TonConnect.init(manifestUrl:storage:),
+# which is the entry point the README opens with. The same #if hides
+# SystemWalletOpener from a macOS build of TonConnectCore.
+version: 1
+builder:
+  configs:
+    - documentation_targets: [TonConnectSDK, TonConnectCore, TonConnectUI]
+      platform: ios
