@@ -1,0 +1,76 @@
+name: Bug report
+description: Something behaves differently from what the documentation says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suspected a **vulnerability** rather than a bug? Close this and use
+        [Report a vulnerability](https://github.com/bbetsey/tonconnect-swift/security/advisories/new)
+        instead — it opens a private advisory rather than a public issue.
+
+        **Never paste session material** — Keychain contents, a session secret key,
+        a wallet private key or a seed phrase. None of it is needed to describe a
+        bug, and an issue is a public place.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+      description: Both halves, please. The second one is what tells us which of the two is wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Smallest sequence that reproduces it
+      description: |
+        Calls in order, and what the wallet showed at each step. If it only happens
+        against one wallet, say which — the package deliberately carries no
+        wallet-specific branches, so that fact is itself the finding.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "0.2.1, or a commit SHA"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      description: The default is the native one, built by `TonConnect(manifestUrl:)`.
+      options:
+        - Native (default)
+        - JavaScriptCore
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and OS version
+      placeholder: "iPhone 15 Pro, iOS 18.5 — or: iOS 26.2 simulator"
+    validations:
+      required: true
+
+  - type: input
+    id: wallet
+    attributes:
+      label: Wallet and its version
+      description: Leave blank if the problem reproduces without a wallet.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Console.app, filtered by subsystem `tonconnect-swift`. Redact anything that
+        identifies the user or the session before pasting.
+      render: text

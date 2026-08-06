@@ -1,0 +1,11 @@
+# Blank issues stay off: the two forms ask for the version, the platform, the
+# engine and the wallet, and a report without those costs a round-trip before
+# anyone can even try to reproduce it.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/bbetsey/tonconnect-swift/security/advisories/new
+    about: A private advisory, not a public issue. Anything that could cost a user money belongs here.
+  - name: How to contribute
+    url: https://github.com/bbetsey/tonconnect-swift/blob/main/CONTRIBUTING.md
+    about: Branch rules, how the tests are named, and what a pull request needs to carry.
