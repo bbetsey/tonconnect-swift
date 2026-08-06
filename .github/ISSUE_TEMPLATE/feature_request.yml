@@ -1,0 +1,36 @@
+name: Feature request
+description: Something the package should be able to do and cannot.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do that the package makes hard?
+      description: |
+        The problem, not the solution. A described problem can be solved several
+        ways; a described solution can only be accepted or refused.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What are you doing instead today?
+      description: |
+        If there is a workaround, it tells us how much the gap costs. If the
+        workaround is "gave up", that is worth knowing too.
+
+  - type: textarea
+    id: api
+    attributes:
+      label: What the API might look like
+      description: Optional. A sketch in Swift is enough — it does not have to compile.
+      render: swift
+
+  - type: markdown
+    attributes:
+      value: |
+        Worth knowing before you write: while the major version is zero the public
+        API may still change, but a release that breaks it is `1.0.0` rather than
+        another `0.x`. New public API is therefore a promise, and gets weighed as
+        one — a smaller surface that solves the same problem usually wins.
