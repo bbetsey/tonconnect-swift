@@ -71,8 +71,42 @@ jobs:
 
       # The live-bridge smoke tests stay off by default: they talk to a public
       # bridge over the network and would make CI depend on someone else's uptime.
+      #
+      # Coverage rides along here rather than in a job of its own: a separate job
+      # would rebuild the whole package to measure what this one just built.
       - name: Test
-        run: swift test
+        run: swift test --enable-code-coverage
+
+      # Reported, not enforced. The total is held down by TonConnectUI, whose
+      # SwiftUI views measure 0% because a unit test cannot render them — a
+      # threshold over the whole package would therefore be a number about the
+      # UI's shape rather than about the tests. Read the per-file table instead;
+      # the protocol code is where a drop matters.
+      - name: Coverage
+        run: |
+          BIN=$(swift build --show-bin-path)
+          BUNDLE=$(ls -d "$BIN"/*.xctest | head -1)
+          NAME=$(basename "$BUNDLE" .xctest)
+          REPORT=$(xcrun llvm-cov report \
+            "$BUNDLE/Contents/MacOS/$NAME" \
+            -instr-profile "$BIN/codecov/default.profdata" \
+            -ignore-filename-regex='(Tests|\.build)/')
+          echo "$REPORT"
+          {
+            echo "### Coverage"
+            echo
+            echo "\`\`\`"
+            echo "$REPORT" | tail -1
+            echo "\`\`\`"
+            echo
+            echo "<details><summary>Per file</summary>"
+            echo
+            echo "\`\`\`"
+            echo "$REPORT"
+            echo "\`\`\`"
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   example:
     name: Example app
