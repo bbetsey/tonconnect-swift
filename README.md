@@ -1,3 +1,5 @@
+![Native TON Connect SDK for Swift](.github/banner.jpg)
+
 # TonConnect for Swift
 
 A native Swift implementation of [TON Connect](https://docs.ton.org/develop/dapps/ton-connect/overview)
