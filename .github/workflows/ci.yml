@@ -45,6 +45,11 @@ jobs:
           case "$head" in
             feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
               echo "ok: $head" ;;
+            dependabot/*)
+              # Dependabot names its branches dependabot/<ecosystem>/<dep>-<version>
+              # and the prefix is not configurable — only the separator is. So the
+              # choice is to allow the prefix or to reject every update it opens.
+              echo "ok: dependabot" ;;
             main)
               # The back-merge after a release: main carries the merge commit that
               # closed the release, and develop needs it to stay a superset. Without
@@ -53,7 +58,8 @@ jobs:
             *)
               echo "::error::branch '$head' does not follow <type>/<slug>."
               echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
-              echo "::error::(main is allowed too, for the back-merge after a release.)"
+              echo "::error::(main is allowed too, for the back-merge after a release,"
+              echo "::error::and so is dependabot/*, whose prefix it cannot rename.)"
               exit 1 ;;
           esac
 
@@ -61,7 +67,7 @@ jobs:
     name: Build and test
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Toolchain
         run: swift --version
@@ -71,14 +77,48 @@ jobs:
 
       # The live-bridge smoke tests stay off by default: they talk to a public
       # bridge over the network and would make CI depend on someone else's uptime.
+      #
+      # Coverage rides along here rather than in a job of its own: a separate job
+      # would rebuild the whole package to measure what this one just built.
       - name: Test
-        run: swift test
+        run: swift test --enable-code-coverage
+
+      # Reported, not enforced. The total is held down by TonConnectUI, whose
+      # SwiftUI views measure 0% because a unit test cannot render them — a
+      # threshold over the whole package would therefore be a number about the
+      # UI's shape rather than about the tests. Read the per-file table instead;
+      # the protocol code is where a drop matters.
+      - name: Coverage
+        run: |
+          BIN=$(swift build --show-bin-path)
+          BUNDLE=$(ls -d "$BIN"/*.xctest | head -1)
+          NAME=$(basename "$BUNDLE" .xctest)
+          REPORT=$(xcrun llvm-cov report \
+            "$BUNDLE/Contents/MacOS/$NAME" \
+            -instr-profile "$BIN/codecov/default.profdata" \
+            -ignore-filename-regex='(Tests|\.build)/')
+          echo "$REPORT"
+          {
+            echo "### Coverage"
+            echo
+            echo "\`\`\`"
+            echo "$REPORT" | tail -1
+            echo "\`\`\`"
+            echo
+            echo "<details><summary>Per file</summary>"
+            echo
+            echo "\`\`\`"
+            echo "$REPORT"
+            echo "\`\`\`"
+            echo
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   example:
     name: Example app
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The example depends on the package by relative path, so this build is an
       # integration test of the public API: rename something a consumer uses and
@@ -96,7 +136,7 @@ jobs:
     name: Documentation
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # --warnings-as-errors is DocC's own flag: it fails on DocC diagnostics — a
       # link to a symbol that was renamed, a page nothing curates — and says

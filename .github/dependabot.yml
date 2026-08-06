@@ -1,0 +1,32 @@
+# Two ecosystems, and they are worth different amounts here.
+#
+# github-actions is the one that pays: the workflow pins actions/checkout by
+# major tag, and nothing else in this repository would notice it going stale.
+#
+# swift is listed on the understanding that Dependabot understands it. GitHub's
+# own docs and its issue tracker disagree on that at the time of writing, so if
+# this entry is rejected the config will say so on the repository's Dependabot
+# page — delete it then. The stake is small either way: the package has exactly
+# one dependency, swift-docc-plugin, and it is a build-time plugin that never
+# reaches a consumer's binary.
+#
+# target-branch points at develop because main takes releases and nothing else.
+# Without it Dependabot aims at the default branch, and the branch policy would
+# refuse the pull request for the right reason. One caveat comes with it: a
+# configuration carrying target-branch no longer applies to *security* updates,
+# which keep going to the default branch on their own. If one ever appears it
+# will be blocked by the same rule, and the answer then is the normal one — take
+# the fix into develop and cut a release.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"
+
+  - package-ecosystem: "swift"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "monthly"

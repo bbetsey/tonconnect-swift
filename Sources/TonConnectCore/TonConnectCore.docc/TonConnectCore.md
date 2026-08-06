@@ -70,6 +70,35 @@ host without one gets `errSecMissingEntitlement` (-34018) on every write. Treat
 macOS as unsupported: the package builds there so that `swift build`,
 `swift test` and DocC have a platform to run on, not because the flow works.
 
+#### The secret, and the trade-off it was stored under
+
+A session is not a token the wallet can revoke by itself: it is a Curve25519
+secret key, held as hex, and it is what decrypts everything the wallet sends and
+authenticates everything sent back — the transport is NaCl's `crypto_box`, so the
+same key does both. Whoever holds it holds the session. That is the thing being
+stored, and the choices below are trade-offs made against it rather than settings
+picked for convenience.
+
+The item is filed under `kSecAttrAccessibleAfterFirstUnlock` — deliberately not
+the `…ThisDeviceOnly` variant. The device-only variants are tied to the device
+UID, which means they do not survive onto another device at all; the plain one
+does, and it is what keeps a session alive across a restore. The cost is the
+other side of the same sentence: an encrypted device backup carries the secret
+with it, and restoring that backup onto a different device brings a live session
+along. If your threat model puts a stolen backup above the annoyance of
+reconnecting, construct your own ``TonConnectStorage`` and use the device-only
+attribute; the protocol does not mind, only the user's patience does.
+
+`kSecAttrSynchronizable` is never set, so the item defaults to non-syncing and
+does not travel through iCloud Keychain. This is not a choice you can reverse
+from the outside — write your own storage if you want it.
+
+Nothing in this target writes key material to the log. Failures to store report
+the operation and the error under the subsystem `tonconnect-swift`, and neither
+carries the key. Note that this promise covers this target: the JavaScriptCore
+engine forwards the bundled JS SDK's own console output to the system log
+unredacted, which is one more reason it is not the default engine.
+
 ### Errors
 
 - ``TonConnectError``

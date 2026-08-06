@@ -1,3 +1,5 @@
+![Native TON Connect SDK for Swift](.github/banner.jpg)
+
 # TonConnect for Swift
 
 A native Swift implementation of [TON Connect](https://docs.ton.org/develop/dapps/ton-connect/overview)
@@ -179,6 +181,9 @@ unexpected shape is accommodated rather than allowed to break a session.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Found something that could cost a user money? Do not open an issue — see
+[SECURITY.md](SECURITY.md) and report it privately.
 
 ## License
 
