@@ -1,0 +1,22 @@
+# Two ecosystems, and they are worth different amounts here.
+#
+# github-actions is the one that pays: the workflow pins actions/checkout by
+# major tag, and nothing else in this repository would notice it going stale.
+#
+# swift is listed on the understanding that Dependabot understands it. GitHub's
+# own docs and its issue tracker disagree on that at the time of writing, so if
+# this entry is rejected the config will say so on the repository's Dependabot
+# page — delete it then. The stake is small either way: the package has exactly
+# one dependency, swift-docc-plugin, and it is a build-time plugin that never
+# reaches a consumer's binary.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "monthly"
