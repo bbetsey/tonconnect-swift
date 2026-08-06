@@ -61,7 +61,7 @@ jobs:
     name: Build and test
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Toolchain
         run: swift --version
@@ -112,7 +112,7 @@ jobs:
     name: Example app
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The example depends on the package by relative path, so this build is an
       # integration test of the public API: rename something a consumer uses and
@@ -130,7 +130,7 @@ jobs:
     name: Documentation
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # --warnings-as-errors is DocC's own flag: it fails on DocC diagnostics — a
       # link to a symbol that was renamed, a page nothing curates — and says
