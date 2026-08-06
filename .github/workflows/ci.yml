@@ -45,6 +45,11 @@ jobs:
           case "$head" in
             feat/*|fix/*|docs/*|test/*|refactor/*|perf/*|build/*|ci/*|chore/*|release/*|hotfix/*)
               echo "ok: $head" ;;
+            dependabot/*)
+              # Dependabot names its branches dependabot/<ecosystem>/<dep>-<version>
+              # and the prefix is not configurable — only the separator is. So the
+              # choice is to allow the prefix or to reject every update it opens.
+              echo "ok: dependabot" ;;
             main)
               # The back-merge after a release: main carries the merge commit that
               # closed the release, and develop needs it to stay a superset. Without
@@ -53,7 +58,8 @@ jobs:
             *)
               echo "::error::branch '$head' does not follow <type>/<slug>."
               echo "::error::Allowed types: feat fix docs test refactor perf build ci chore release hotfix."
-              echo "::error::(main is allowed too, for the back-merge after a release.)"
+              echo "::error::(main is allowed too, for the back-merge after a release,"
+              echo "::error::and so is dependabot/*, whose prefix it cannot rename.)"
               exit 1 ;;
           esac
 
