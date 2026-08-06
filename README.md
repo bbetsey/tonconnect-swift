@@ -182,6 +182,9 @@ unexpected shape is accommodated rather than allowed to break a session.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+Found something that could cost a user money? Do not open an issue — see
+[SECURITY.md](SECURITY.md) and report it privately.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
