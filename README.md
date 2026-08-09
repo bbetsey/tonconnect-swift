@@ -20,6 +20,21 @@ wallet picker, the connect button and the operation sheet are plain SwiftUI view
 > is for the wallet side. "TON Connect" is used here to name the protocol this
 > package speaks.
 
+## What you can build
+
+A wallet can do two things for an app, and the package gives you both. A
+connection carries the user's address, so an app can recognise a returning
+customer without inventing an account system. A transaction request asks the
+wallet to move funds — to your address for a purchase, to a contract for a mint,
+to wherever the user approves. Signing data covers the rest: proving ownership of
+an address to your backend without a password.
+
+What the package does not do is watch the chain. `sendTransaction` returns when
+the wallet reports that it signed and broadcast the message; whether the transfer
+settled is a question for a node or an indexer. Any flow where the user receives
+something in exchange for payment needs that check on a server you control. This
+is the half that talks to the wallet, and deliberately only that half.
+
 ## Requirements
 
 - iOS 16+
@@ -97,6 +112,10 @@ struct ContentView: View {
 
 `TonConnect` is an `ObservableObject`: `state`, `account`, `operation` and
 `connectLink` drive your own views just as well.
+
+![Picking a wallet, scanning the QR to connect from another device, waiting for the wallet to confirm, and the transaction sent](.github/flow.jpg)
+
+Those four screens are the two calls above doing their work — no other UI code.
 
 ## Sending a transaction
 
