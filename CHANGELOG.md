@@ -8,6 +8,29 @@ this one does not take that permission: a release that breaks the public API is
 1.0.0. That is what makes the `from:` requirement in the installation snippet
 safe to follow — every version it accepts is meant to keep compiling.
 
+## 0.2.3 — 2026-08-09
+
+No source changes. The README is what moved, and the README on the repository's
+front page is read from the default branch — which is what a release is for here.
+
+### Added
+
+- A picture of the flow at the end of Quick start: picking a wallet, the QR for
+  connecting from a second device, waiting for the wallet to confirm, and the
+  transaction sent. It sits directly under the two calls that produce it, because
+  that is where a reader asks what they get for them.
+- A section saying what the package is for, and where it stops. A connection
+  carries the user's address, a transaction request moves funds, signing proves
+  ownership to a backend — but `sendTransaction` returns when the wallet reports
+  that it signed and broadcast the message, so whether the transfer settled is a
+  question for a node or an indexer. Any flow where the user receives something
+  in exchange for payment needs that check on a server you control, and it is
+  cheaper to read that here than to discover it.
+
+### Changed
+
+- The README banner.
+
 ## 0.2.2 — 2026-08-06
 
 No source changes. Everything here either explains the package or governs the
