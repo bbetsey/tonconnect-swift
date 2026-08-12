@@ -10,23 +10,25 @@
 # one dependency, swift-docc-plugin, and it is a build-time plugin that never
 # reaches a consumer's binary.
 #
-# target-branch points at develop because main takes releases and nothing else.
-# Without it Dependabot aims at the default branch, and the branch policy would
-# refuse the pull request for the right reason. One caveat comes with it: a
-# configuration carrying target-branch no longer applies to *security* updates,
-# which keep going to the default branch on their own. If one ever appears it
-# will be blocked by the same rule, and the answer then is the normal one — take
-# the fix into develop and cut a release.
+# No target-branch on purpose. Dependabot aims at the default branch, and the
+# default branch here IS develop — main is protected and takes releases only. An
+# earlier version of this file spelled develop out explicitly, on the mistaken
+# belief that main was the default; that was not merely redundant, because a
+# configuration carrying target-branch stops applying to *security* updates,
+# which go to the default branch regardless. Leaving it out keeps both kinds of
+# update on the same path.
+#
+# If the default branch is ever changed to main, this needs revisiting: pull
+# requests would start landing on a branch whose policy refuses everything but a
+# release.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
-    target-branch: "develop"
     schedule:
       interval: "monthly"
 
   - package-ecosystem: "swift"
     directory: "/"
-    target-branch: "develop"
     schedule:
       interval: "monthly"
