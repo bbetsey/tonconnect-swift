@@ -656,15 +656,43 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// (code 300 et al.) is a TYPED WalletResponse.error, NOT a throw
     /// (contract).
     private func handleWalletResponse(json: String) {
-        guard let response = try? JSONDecoder().decode(WalletResponse.self, from: Data(json.utf8)) else {
+        if let response = try? JSONDecoder().decode(WalletResponse.self, from: Data(json.utf8)) {
+            resolvePendingRPC(id: Self.responseID(of: response), .success(response))
             return
         }
-        let id: String
+        // Wire tolerance: a wallet that answers without `id`. Such a frame cannot be
+        // correlated, so it is adopted only when exactly one request is in flight —
+        // then there is nothing to confuse it with. With two or more it is dropped:
+        // resolving the wrong operation is worse than resolving none. Before this,
+        // every such frame was dropped and the operation simply never returned.
+        lock.lock()
+        let soleID = pendingRPC.count == 1 ? pendingRPC.keys.first : nil
+        lock.unlock()
+        guard let soleID,
+              let response = Self.decode(json: json, adoptingID: soleID) else { return }
+        resolvePendingRPC(id: soleID, .success(response))
+    }
+
+    private static func responseID(of response: WalletResponse) -> String {
         switch response {
-        case .success(_, let responseId): id = responseId
-        case .error(_, _, let responseId): id = responseId
+        case .success(_, let id): return id
+        case .error(_, _, let id): return id
         }
-        resolvePendingRPC(id: id, .success(response))
+    }
+
+    /// Re-decodes a frame that carries no `id` by inserting one and handing it to the
+    /// same WalletResponse decoder — so every other wire tolerance (an object result,
+    /// an error without a message, a numeric id) keeps applying, with no second copy
+    /// of that logic. An `id` that is present but unusable is NOT repaired: absence is
+    /// a wallet habit, a malformed value is corruption.
+    private static func decode(json: String, adoptingID id: String) -> WalletResponse? {
+        guard var object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
+              object["id"] == nil,
+              object["result"] != nil || object["error"] != nil
+        else { return nil }
+        object["id"] = id
+        guard let repaired = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return try? JSONDecoder().decode(WalletResponse.self, from: repaired)
     }
 
     /// Exactly one resume per ticket (same discipline as resolvePendingConnect).

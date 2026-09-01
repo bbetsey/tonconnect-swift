@@ -547,4 +547,31 @@ private final class CapturedText: @unchecked Sendable {
         // The UI gates waking the wallet on this event (SDK parity: onRequestSent).
         #expect(await waitUntil { collector.all.contains(.requestSent) })
     }
+    
+    @Test func testWalletResponseWithoutIDResolvesTheOnlyRequestInFlight() async throws {
+        let storage = InMemoryStorage()
+        let wallet = WalletSimulator()
+        let engine = makeEngine(storage: storage)
+        installProvider(wallet: wallet)
+        _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
+        let store = NativeSessionStore(storage: storage)
+        let session = await pollSession(store) { $0?.walletPublicKeyHex != nil }
+        let clientId = try #require(session?.sessionId)
+
+        // The wallet answers without `id` — unmatchable by the spec's rule, and the
+        // frame used to be dropped, leaving sendTransaction awaiting forever.
+        ConnectFakeBridge.messageHandler = { _, _ in
+            ConnectFakeBridge.pushFrame(id: nil, data: wallet.frame("{\"result\":\"boc\"}", to: clientId))
+        }
+
+        let payload = SendTransactionPayload(validUntil: 1_785_221_364, network: "-3",
+                                             from: nil, messages: [])
+        let response = try await engine.sendTransaction(payload)
+
+        guard case .success(let result, _) = response else {
+            Issue.record("expected .success, got \(response)")
+            return
+        }
+        #expect(result == "boc")
+    }
 }
