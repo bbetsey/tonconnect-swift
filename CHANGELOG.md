@@ -8,6 +8,18 @@ this one does not take that permission: a release that breaks the public API is
 1.0.0. That is what makes the `from:` requirement in the installation snippet
 safe to follow — every version it accepts is meant to keep compiling.
 
+## Unreleased
+
+### Fixed
+
+- A wallet reply without an `id` no longer leaves the operation waiting forever.
+  Some wallets omit the `id` the spec requires; such a frame failed to decode and
+  was dropped, so `sendTransaction` or `signData` never returned and the only way
+  out was cancelling the task. The frame is now adopted when exactly one request
+  is in flight, where there is nothing to confuse it with. With two or more in
+  flight it is still dropped, deliberately: resolving the wrong operation is worse
+  than resolving none. An `id` that is present but malformed is not repaired.
+
 ## 0.2.3 — 2026-08-09
 
 No source changes. The README is what moved, and the README on the repository's
