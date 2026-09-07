@@ -114,6 +114,32 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  simulator:
+    name: iOS simulator
+    runs-on: macos-latest
+    # A hang is this job's failure mode, not a red assertion: the suite used to
+    # sit forever on the simulator (a JS promise whose resolver GC had collected,
+    # then a fake wallet answering before its POST completed). The cap turns a
+    # regression into a failure within minutes instead of a six-hour runner.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      # `swift test` runs on macOS, where #if canImport(UIKit) removes
+      # SystemWalletOpener and the convenience initializer TonConnect(manifestUrl:)
+      # — the entry point the README opens with — before the tests ever see them.
+      # This job is the only place the package is tested on the platform it ships
+      # for. The device name is resolved at run time because runner images change
+      # which simulators they carry.
+      - name: Test on the iOS simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+[^(]*' | sed 's/ *$//')
+          echo "simulator: $DEVICE"
+          xcodebuild test \
+            -scheme TonConnect-Package \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -quiet
+
   example:
     name: Example app
     runs-on: macos-latest

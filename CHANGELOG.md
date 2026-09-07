@@ -10,7 +10,28 @@ safe to follow — every version it accepts is meant to keep compiling.
 
 ## Unreleased
 
+### Added
+
+- The test suite now runs on the iOS simulator in CI, alongside the macOS run.
+  On macOS `#if canImport(UIKit)` removes `SystemWalletOpener` and the convenience
+  initializer `TonConnect(manifestUrl:)` before the tests see them, so until now
+  the package's entry point was never exercised by an automated test on the
+  platform it ships for. Two tests are deliberately not run there: the Keychain
+  spike (a package test bundle carries no entitlement, so every write fails with
+  `errSecMissingEntitlement`) and a garbage-collection experiment whose premise
+  the simulator's collector does not share.
+
 ### Fixed
+
+- The JavaScriptCore engine no longer hangs in `restoreConnection` when the
+  collector runs before a storage read completes. The resolvers of the promise
+  bridging a Swift storage read into JavaScript were held as
+  `JSManagedValue(value:andOwner:)`, which JavaScriptCore keeps only while the
+  value is reachable from the JS graph or from an owner registered through
+  `addManagedReference` - and nothing referenced a promise's own resolve
+  function. A timely collection freed it, the read never settled, and the SDK's
+  restore waited forever; the iOS simulator hit this on every run. The resolvers
+  are now held strongly for the duration of the read.
 
 - A wallet reply without an `id` no longer leaves the operation waiting forever.
   Some wallets omit the `id` the spec requires; such a frame failed to decode and
