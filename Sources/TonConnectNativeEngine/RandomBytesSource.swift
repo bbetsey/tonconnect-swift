@@ -36,7 +36,14 @@ struct FixedBytesSource: RandomBytesSource {
 enum RandomBytesBridge {
     // PRIVATE + locked accessor: both the write (withSource) and the read (the
     // trampoline) go under ONE lock — otherwise a data race on the multi-word existential.
-    private static var current: RandomBytesSource = SecureRandomBytesSource()
+    //
+    // nonisolated(unsafe): Swift 6 rejects mutable static state it cannot see a
+    // lock around. The lock IS there — every access below takes it — but the
+    // compiler cannot follow that, and the alternative (an OSAllocatedUnfairLock
+    // holding the source) would deadlock: withSource holds the lock across body,
+    // while the trampoline reads the source from inside body, so the lock must
+    // stay recursive. "unsafe" here means "checked by hand", not "unchecked".
+    nonisolated(unsafe) private static var current: RandomBytesSource = SecureRandomBytesSource()
 
     /// install() before the first crypto use — the abort() in the C shim is unreachable in normal operation.
     static let bootstrap: Void = { install() }()
