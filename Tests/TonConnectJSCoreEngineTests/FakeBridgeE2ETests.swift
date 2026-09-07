@@ -73,7 +73,19 @@ struct FakeBridgeE2ETests {
                 return "{\"from\":\"\(walletPub)\",\"message\":\"\(encrypted)\"}"
             }
             if let responseFrame {
-                E2EFakeBridge.pushFrame(id: "2", data: responseFrame)
+                // The reply must land AFTER the POST it answers has completed. The
+                // SDK awaits gateway.send() and only then registers the pending
+                // request (pendingRequests.set after the yield); a reply that beats
+                // the POST's completion finds no ticket and is dropped, and signData
+                // never settles. This handler runs inside the POST's startLoading,
+                // so a synchronous push is exactly that early - on the simulator the
+                // SSE path won the race often enough to hang the suite (2026-09-07).
+                // A real wallet answers after the request has been delivered, which
+                // is what the delay models; the native engine registers its ticket
+                // before posting and does not depend on this ordering.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+                    E2EFakeBridge.pushFrame(id: "2", data: responseFrame)
+                }
             }
         }
     }

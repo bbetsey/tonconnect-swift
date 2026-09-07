@@ -71,24 +71,37 @@ public final class StorageBridge {
             resolveFn = res
             rejectFn = rej
         }!
-        // JSManagedValue — GC won't collect the resolvers while the Swift operation is in flight.
-        let resolve = JSManagedValue(value: resolveFn, andOwner: context)
-        let reject = JSManagedValue(value: rejectFn, andOwner: context)
+        // The resolvers are held as plain JSValues, on purpose. They used to be
+        // JSManagedValue(value:andOwner: context), on the belief that GC would not
+        // collect them while the Swift read was in flight. JavaScriptCore's own
+        // header says otherwise: a managed value is "conditionally retained" — kept
+        // only while reachable from the JS graph or from an owner registered via
+        // addManagedReference — and nothing here registered one. Nothing in JS
+        // references a promise's own resolve/reject functions, so under a timely
+        // collection they were freed, `resolve?.value` became nil, and the promise
+        // never settled: the SDK's restoreConnection hung forever on the iOS
+        // simulator, where an allocation-heavy call (a NaCl keypair) right before
+        // the read was enough to trigger the collector (SimTraceProbe, 2026-09-07).
+        // TimerPolyfill learned the same lesson earlier. A strong JSValue is safe
+        // here: these closures live in a Swift Task and are never handed to JS, so
+        // there is no JS-side cycle for the header's warning to apply to.
+        let resolve = resolveFn
+        let reject = rejectFn
         body(
             { value in
                 bridge.enqueue {
                     if let value {
-                        resolve?.value?.call(withArguments: [value])
+                        resolve?.call(withArguments: [value])
                     } else {
-                        resolve?.value?.call(withArguments: [NSNull()]) // nil → JS null
+                        resolve?.call(withArguments: [NSNull()]) // nil → JS null
                     }
                 }
             },
             { message in
                 bridge.enqueue {
-                    guard let ctx = reject?.value?.context,
+                    guard let ctx = reject?.context,
                           let error = JSValue(newErrorFromMessage: message, in: ctx) else { return }
-                    reject?.value?.call(withArguments: [error])
+                    reject?.call(withArguments: [error])
                 }
             }
         )
