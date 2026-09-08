@@ -183,18 +183,30 @@ public final class JSCoreEngine: TonConnectEngine, @unchecked Sendable {
     /// and onCancel invoke .abort() on the JS queue — the SDK tears down fetch/SSE
     /// (the polyfill carries it through to NativeFetchTask.cancel()).
     private func awaitCancellable(_ call: @escaping (_ ctx: JSContext, _ signal: JSValue) -> JSValue) async throws -> String {
-        let controllerBox = bridge.perform { ctx -> JSManagedValue in
-            let controller = ctx.evaluateScript("new AbortController()")!
-            return JSManagedValue(value: controller, andOwner: ctx)
+        let controller = bridge.perform { ctx in
+            AbortControllerBox(ctx.evaluateScript("new AbortController()")!)
         }
         return try await withTaskCancellationHandler {
             try await bridge.awaitPromise { ctx in
-                let signal = controllerBox.value!.objectForKeyedSubscript("signal")!
+                let signal = controller.value.objectForKeyedSubscript("signal")!
                 return call(ctx, signal)
             }
         } onCancel: {
-            bridge.enqueue { _ = controllerBox.value?.invokeMethod("abort", withArguments: []) }
+            bridge.enqueue { _ = controller.value.invokeMethod("abort", withArguments: []) }
         }
+    }
+
+    /// The AbortController as a plain JSValue in a Swift box. It used to be a
+    /// JSManagedValue(value:andOwner: context) with a force-unwrapped `.value`:
+    /// the same conditional retention that emptied StorageBridge's promise
+    /// resolvers under GC (2026-09-07) — here it would have meant either a lost
+    /// abort or a crash. Nothing in JS references the controller, so a strong
+    /// JSValue forms no cycle. `@unchecked Sendable` because the cancellation
+    /// handler is a @Sendable closure and JSValue is not Sendable; the value is
+    /// only ever touched on the JS queue (perform/enqueue), which is the real guard.
+    private final class AbortControllerBox: @unchecked Sendable {
+        let value: JSValue
+        init(_ value: JSValue) { self.value = value }
     }
 
     /// RPC success: the SDK unwraps the protocol envelope itself — a {boc:...} JSON arrives.

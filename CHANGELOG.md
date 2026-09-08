@@ -21,6 +21,16 @@ safe to follow — every version it accepts is meant to keep compiling.
   `errSecMissingEntitlement`) and a garbage-collection experiment whose premise
   the simulator's collector does not share.
 
+### Changed
+
+- The package builds in the Swift 6 language mode, and CI now checks that it
+  keeps doing so. Until now a consumer compiling with strict concurrency saw
+  44 errors: `NSLock.lock()`/`unlock()` around short critical sections in async
+  code (now `withLock`), a mutable static behind a lock the compiler could not
+  see, and two JavaScriptCore values captured by cancellation and storage
+  closures. `Package.swift` stays at tools version 5.10, so nothing is required
+  of consumers who are not there yet.
+
 ### Fixed
 
 - The JavaScriptCore engine no longer hangs in `restoreConnection` when the
