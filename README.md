@@ -138,6 +138,16 @@ The closure runs again if the user retries after a connection problem, so
 `validUntil` is recomputed rather than replayed. Passing a payload by value works
 too, and then a retry resends it verbatim — expiry included.
 
+By default the call waits for the wallet for as long as it takes; cancelling the
+Task is the only way out. An optional `timeout:` puts a deadline on the whole
+round trip — including the minutes a person may spend reading the request in the
+wallet — after which the request is cancelled and `TonConnectError.timeout` is
+thrown:
+
+```swift
+_ = try await tonConnect.sendTransaction(timeout: .seconds(180)) { … }
+```
+
 ## Signing data
 
 ```swift

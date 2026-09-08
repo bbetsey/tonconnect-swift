@@ -15,7 +15,10 @@ Two ideas are worth knowing before reading further.
 **A refusal is an outcome, not an error.** `TonConnect.sendTransaction(_:)` and
 `TonConnect.signData(_:)` return a ``WalletResponse``; a user pressing Cancel
 comes back as `WalletResponse.error`, not as a thrown Swift error. Throwing is
-reserved for a request that never got an answer at all.
+reserved for a request that never got an answer at all — cancelled, lost on the
+way to the bridge, or past the optional `timeout:` you gave it, in which case
+the error is ``TonConnectError/timeout(after:)``. Without a timeout the wait has
+no deadline: a wallet request is answered by a person, on their own time.
 
 **The wire is treated with suspicion, the model is not.** Live wallets disagree
 with the specification in small ways — a timestamp as a string, a missing `id`, a
