@@ -12,6 +12,17 @@ safe to follow — every version it accepts is meant to keep compiling.
 
 ### Added
 
+- An optional `timeout:` on every wallet round trip of `TonConnect` —
+  `connect`, `connectWithQR`, `sendTransaction` and `signData`, both overloads.
+  The default `nil` keeps the old contract: the call waits for the wallet for as
+  long as it takes, and only cancelling the Task ends it. With a deadline the
+  request is cancelled when it passes and the new `TonConnectError.timeout(after:)`
+  is thrown; the operation state shows a connection problem with a Retry, and the
+  retry runs under the same deadline. The clock covers the whole round trip,
+  including the time a person spends in the wallet, so it is a budget of minutes,
+  not seconds. Adding the enum case is the one source-breaking part: an
+  exhaustive `switch` over `TonConnectError` needs a new arm.
+
 - The test suite now runs on the iOS simulator in CI, alongside the macOS run.
   On macOS `#if canImport(UIKit)` removes `SystemWalletOpener` and the convenience
   initializer `TonConnect(manifestUrl:)` before the tests see them, so until now

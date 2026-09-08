@@ -82,6 +82,33 @@ struct FacadeTests {
         #expect(facade.isConnected)
     }
     
+    // MARK: - timeout
+
+    /// A connect that outlives its deadline is torn down like a cancelled one:
+    /// the error is typed, and the state goes back to .disconnected so the UI
+    /// offers a fresh attempt instead of an eternal spinner.
+    @Test func testConnectWithTimeoutThrowsTimeoutAndReturnsToDisconnected() async {
+        let engine = HangingEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        await #expect(throws: TonConnectError.timeout(after: .milliseconds(50))) {
+            try await facade.connect(source: Self.source, items: [.tonAddress(network: nil)],
+                                     timeout: .milliseconds(50))
+        }
+        #expect(facade.state == .disconnected)
+        await waitUntil { engine.cancellations == 1 }
+        #expect(engine.cancellations == 1, "the engine's connect was cancelled, not abandoned")
+    }
+
+    @Test func testConnectWithQRWithTimeoutThrowsTimeoutAndReturnsToDisconnected() async {
+        let facade = TonConnect(engine: HangingEngine(), autoRestore: false)
+        await #expect(throws: TonConnectError.timeout(after: .milliseconds(50))) {
+            try await facade.connectWithQR(bridgeURLs: ["https://bridge.test"],
+                                           items: [.tonAddress(network: nil)],
+                                           timeout: .milliseconds(50))
+        }
+        #expect(facade.state == .disconnected)
+    }
+
     @Test func testConnectStoresWalletNameFromDeviceInfo() async throws {
         let facade = TonConnect(engine: FakeEngine(), autoRestore: false)
         try await facade.connect(source: WalletConnectionSource(universalLink: "u", bridgeUrl: "b"),
