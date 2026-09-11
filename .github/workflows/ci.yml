@@ -152,7 +152,21 @@ jobs:
           xcodebuild test \
             -scheme TonConnect-Package \
             -destination "platform=iOS Simulator,name=$DEVICE" \
+            -resultBundlePath "$RUNNER_TEMP/simulator.xcresult" \
             -quiet
+
+      # With -quiet the log of a failed run names the test and nothing else: no
+      # failed expectation, no message, no timing. Twice in a row (PR #39, #40)
+      # a test failed on the first attempt and passed on the re-run, and the log
+      # left nothing to diagnose. The result bundle keeps all of it — open it in
+      # Xcode, or `xcrun xcresulttool get test-results tests --path <bundle>`.
+      - name: Keep the result bundle of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: simulator-xcresult
+          path: ${{ runner.temp }}/simulator.xcresult
+          retention-days: 14
 
   example:
     name: Example app
