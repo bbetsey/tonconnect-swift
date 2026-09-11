@@ -53,9 +53,9 @@ branch are yours to make freely, since they disappear on merge.
 
 ## Releases and versioning
 
-The package follows [Semantic Versioning](https://semver.org). While the major
-number is `0`, the promise is deliberately weaker: a minor bump may break API,
-and that is what `0.x` means to everyone consuming it.
+The package follows [Semantic Versioning](https://semver.org). Since 1.0.0 the
+public API is a promise: a change that would break a consumer moves the major
+number, and a minor release only ever adds.
 
 Releasing is a maintainer action — see below — but anyone can ask for one. If a
 merged change is worth shipping, say so in the pull request, or open an issue
@@ -69,17 +69,18 @@ without tags has no versions at all.
 
 ```bash
 git switch main && git pull
-git tag -a 0.2.0 -m "0.2.0 — <what changed>"
-git push origin 0.2.0
+git tag -a 1.1.0 -m "1.1.0 — <what changed>"
+git push origin 1.1.0
 ```
 
 Which number to move:
 
-- **patch** (`0.1.0` → `0.1.1`) — fixes only, nothing added or renamed;
-- **minor** (`0.1.0` → `0.2.0`) — new API, or a change to existing API while
-  still on `0.x`;
-- **major** — held back for `1.0.0`, the point at which the public API is
-  something we are prepared to keep.
+- **patch** (`1.0.0` → `1.0.1`) — fixes only, nothing added or renamed;
+- **minor** (`1.0.0` → `1.1.0`) — new API, with everything that existed still
+  compiling as it did;
+- **major** (`1.0.0` → `2.0.0`) — anything a consumer would have to change
+  their code for: a renamed symbol, a removed parameter, a new case in a public
+  enum they may switch over exhaustively.
 
 Note that tags are NOT covered by branch protection: `refs/tags/*` is a separate
 namespace, so protecting `main` does not stop anyone with write access from
