@@ -45,6 +45,16 @@ extension WalletsListEntry {
         guard let bridgeURL = sseBridge?.url else { return nil }
         return WalletConnectionSource(universalLink: universalURL.absoluteString, bridgeUrl: bridgeURL)
     }
+
+    /// The SSE bridges of the given wallets, each once, in first-seen order —
+    /// the list a "second device" QR connect subscribes to. Several wallets share
+    /// a bridge (the registry has 36 wallets on 25 bridges), and the engine keeps
+    /// one subscription per bridge, so duplicates would only double the traffic.
+    /// A wallet without an SSE bridge contributes nothing.
+    public static func sseBridgeURLs(of wallets: [WalletsListEntry]) -> [String] {
+        var seen = Set<String>()
+        return wallets.compactMap { $0.sseBridge?.url }.filter { seen.insert($0).inserted }
+    }
 }
 
 extension WalletsListEntry {

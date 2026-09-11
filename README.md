@@ -111,7 +111,10 @@ struct ContentView: View {
 ```
 
 `TonConnect` is an `ObservableObject`: `state`, `account`, `operation` and
-`connectLink` drive your own views just as well.
+`connectLink` drive your own views just as well. For a QR of your own,
+`connectWithQR(items:)` from `TonConnectUI` subscribes to the bridge of every
+wallet in the registry and publishes the link to render in `connectLink`;
+`connectWithQR(wallets:items:)` does the same for the wallets you choose.
 
 ![Picking a wallet, scanning the QR to connect from another device, waiting for the wallet to confirm, and the transaction sent](.github/flow.jpg)
 

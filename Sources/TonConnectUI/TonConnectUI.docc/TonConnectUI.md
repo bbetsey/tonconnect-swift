@@ -24,3 +24,12 @@ forgotten dependency should be a compile error, not a crash in front of a user.
 
 - ``WalletsListEntry``
 - ``WalletsListLoader``
+
+### Connecting from a second device
+
+For an app that draws its own QR instead of using the picker: the bridges of
+every wallet in the registry, or of the wallets you choose, and the link arrives
+in `TonConnect.connectLink`.
+
+- ``TonConnectCore/TonConnect/connectWithQR(items:timeout:)``
+- ``TonConnectCore/TonConnect/connectWithQR(wallets:items:timeout:)``
