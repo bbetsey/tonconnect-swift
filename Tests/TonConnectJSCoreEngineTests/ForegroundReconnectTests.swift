@@ -71,8 +71,15 @@ private final class CountBox: @unchecked Sendable {
     }
 
     /// Awaits .disconnected from engine.events with a ceiling (the suite's awaitEvent idiom).
+    ///
+    /// The ceiling is paid only on failure — a green run returns with the event —
+    /// so it is set for the slowest machine the suite runs on. It was 5s; the
+    /// wake test failed once on the CI runner (PR #40, green on re-run, never
+    /// reproduced locally). The SDK's unPause recreates the stream without delay,
+    /// so 5s was not tight by design, only by circumstance: the JS queue, the
+    /// URLSession threads and the parallel suites of this bundle all compete.
     private func awaitDisconnected(from engine: JSCoreEngine,
-                                   timeoutNanoseconds: UInt64 = 5_000_000_000) async -> Bool {
+                                   timeoutNanoseconds: UInt64 = 15_000_000_000) async -> Bool {
         await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 for await event in engine.events where event == .disconnected { return true }

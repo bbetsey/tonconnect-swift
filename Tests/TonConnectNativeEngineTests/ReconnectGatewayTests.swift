@@ -31,10 +31,17 @@ private final class CountBox: @unchecked Sendable {
 
 @Suite(.serialized) struct ReconnectGatewayTests {
 
-    /// Bounded condition wait (a 2s real-time ceiling): a silent gateway fails
-    /// the assert instead of hanging the run (the conformance awaitEvent idiom).
+    /// Bounded condition wait: a silent gateway fails the assert instead of
+    /// hanging the run (the conformance awaitEvent idiom).
+    ///
+    /// The ceiling is paid only on failure — a green run returns the moment the
+    /// condition holds — so it is set for the slowest machine the suite runs on,
+    /// not the fastest. It was 2s; testFirstReconnectWaitsTwoSecondsThenFiveSeconds
+    /// failed once on the CI runner (PR #39, green on re-run, never reproduced
+    /// locally in 34 runs), where this suite shares the bundle with suites that
+    /// run in parallel and hammer URLSession through the same fake protocol.
     private func waitUntil(_ condition: @escaping @Sendable () -> Bool,
-                           timeoutNanoseconds: UInt64 = 2_000_000_000) async -> Bool {
+                           timeoutNanoseconds: UInt64 = 15_000_000_000) async -> Bool {
         let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
         while DispatchTime.now().uptimeNanoseconds < deadline {
             if condition() { return true }
