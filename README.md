@@ -9,10 +9,9 @@ No web view, no JavaScript runtime on the critical path: the protocol — sessio
 crypto, the SSE bridge, the RPC envelope — is implemented in Swift, and the
 wallet picker, the connect button and the operation sheet are plain SwiftUI views.
 
-> **Status: pre-release.** The package works end to end and is exercised against
-> live wallets on a real device. While the major version is zero the public API
-> may still change — but a release that breaks it is 1.0.0, not another 0.x, so
-> the version requirement below is safe to take as written.
+> **Status: 1.0.** The package works end to end and is exercised against live
+> wallets on a real device. The public API is stable: a release that breaks it
+> is 2.0.0, so the version requirement below is safe to take as written.
 
 > **Unofficial.** This is an independent implementation, not affiliated with or
 > endorsed by the TON Foundation or tonkeeper. It implements the dApp side of the
@@ -47,7 +46,7 @@ Add the package with Swift Package Manager:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.2.0")
+    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "1.0.0")
 ]
 ```
 

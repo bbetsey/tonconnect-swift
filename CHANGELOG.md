@@ -2,13 +2,27 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the major version is zero the public API may still change. Semantic
-Versioning permits a zero-major package to break its API in a minor release, and
-this one does not take that permission: a release that breaks the public API is
-1.0.0. That is what makes the `from:` requirement in the installation snippet
-safe to follow — every version it accepts is meant to keep compiling.
+From 1.0.0 on, a release that breaks the public API moves the major number, and
+nothing else does. Before that, while the major was zero, the package already
+held itself to the same rule rather than to the weaker one Semantic Versioning
+allows a zero-major package. That is what makes the `from:` requirement in the
+installation snippet safe to follow — every version it accepts is meant to keep
+compiling.
 
-## Unreleased
+## 1.0.0 — 2026-09-11
+
+The first release whose public API is a promise: from here on, a change that
+would break a consumer is a 2.0.0, not a footnote in a minor. Everything on the
+pre-1.0 list is closed — the suite runs on the platform the package ships for,
+the package builds under Swift 6, a request can be given a deadline, and a QR
+connect no longer needs the bridge list spelled out. One name stays as it is,
+knowingly: `opensWalletAutomatically` governs every jump into the wallet by
+link, not only the automatic one; the name is narrower than the behaviour, and
+it is kept because renaming it would cost every consumer a change for a word.
+
+This release contains one change that can break a build: the new
+`TonConnectError.timeout(after:)` case, described below. An exhaustive `switch`
+over the error needs a new arm. It is the reason this is 1.0.0 and not 0.3.0.
 
 ### Added
 
