@@ -406,12 +406,11 @@ public struct WalletPickerSheet: View {
     /// Universal QR (the left button on home): one QR for any wallet on any
     /// device — we gather every sse bridge of the list.
     private func startUniversalQR() {
-        var seen = Set<String>()
-        let bridges = loader.wallets.compactMap { $0.sseBridge?.url }.filter { seen.insert($0).inserted }
-        guard !bridges.isEmpty else { return }
+        let wallets = loader.wallets
+        guard !WalletsListEntry.sseBridgeURLs(of: wallets).isEmpty else { return }
         show(.homeQR)
         connectTask = Task {
-            try? await tonConnect.connectWithQR(bridgeURLs: bridges,
+            try? await tonConnect.connectWithQR(wallets: wallets,
                                                 items: [.tonAddress(network: nil),
                                                         .tonProof(payload: "tcui-\(UUID().uuidString)")])
         }

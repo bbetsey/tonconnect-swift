@@ -12,6 +12,15 @@ safe to follow — every version it accepts is meant to keep compiling.
 
 ### Added
 
+- `TonConnectUI` extends `TonConnect` with `connectWithQR(items:timeout:)`, the
+  "second device" QR connect with the bridges filled in from the wallet
+  registry — the disk cache if there is one, otherwise the bundled snapshot,
+  with a quiet network refresh for next time, exactly as the picker does. A
+  second overload, `connectWithQR(wallets:items:timeout:)`, takes a list of
+  registry entries you filtered yourself. `WalletsListEntry.sseBridgeURLs(of:)`
+  is the helper both use, and the picker now uses it too. Until now an app that
+  drew its own QR had to gather the bridge URLs by hand.
+
 - An optional `timeout:` on every wallet round trip of `TonConnect` —
   `connect`, `connectWithQR`, `sendTransaction` and `signData`, both overloads.
   The default `nil` keeps the old contract: the call waits for the wallet for as
