@@ -36,6 +36,17 @@ struct OperationStateMappingTests {
         #expect(!message.isEmpty)
     }
 
+    /// A deadline that passed reads like a dropped connection: red, with a Retry.
+    /// The user has nothing to correct, and the same request may well succeed.
+    @Test func testFailureFromTimeoutMapsToNetworkProblemWithNonEmptyMessage() {
+        let outcome = OperationState.failure(from: TonConnectError.timeout(after: .seconds(30)))
+        guard case .networkProblem(let message) = outcome else {
+            Issue.record("expected networkProblem, got \(outcome)")
+            return
+        }
+        #expect(!message.isEmpty)
+    }
+
     @Test func testFailureFromNonTonConnectErrorMapsToNetworkProblem() {
         struct SomeOtherError: Error {}
         let outcome = OperationState.failure(from: SomeOtherError())
@@ -202,6 +213,127 @@ struct OperationFacadeTests {
         try await facade.disconnect()
         #expect(facade.operation == nil)
     }
+
+    // MARK: - timeout
+
+    @Test func testSendTransactionWithTimeoutThrowsTimeoutAndCancelsTheEngineCall() async throws {
+        let engine = HangingEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        await #expect(throws: TonConnectError.timeout(after: .milliseconds(50))) {
+            _ = try await facade.sendTransaction(makePayload(), timeout: .milliseconds(50))
+        }
+        // The loser of the race is cancelled, not abandoned: the engine saw it.
+        for _ in 0..<200 where engine.cancellations == 0 {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(engine.cancellations == 1)
+    }
+
+    /// The UI contract: a deadline that passed is shown as a connection problem,
+    /// which is the outcome that carries a Retry.
+    @Test func testSendTransactionTimeoutSetsOperationToNetworkProblem() async {
+        let facade = TonConnect(engine: HangingEngine(), autoRestore: false)
+        _ = try? await facade.sendTransaction(makePayload(), timeout: .milliseconds(50))
+        guard case .networkProblem = facade.operation else {
+            Issue.record("expected networkProblem, got \(String(describing: facade.operation))")
+            return
+        }
+    }
+
+    @Test func testSignDataWithTimeoutThrowsTimeout() async {
+        let facade = TonConnect(engine: HangingEngine(), autoRestore: false)
+        await #expect(throws: TonConnectError.timeout(after: .milliseconds(50))) {
+            _ = try await facade.signData(.text(text: "probe", network: nil, from: nil),
+                                          timeout: .milliseconds(50))
+        }
+    }
+
+    /// A deadline that is not reached changes nothing: the answer comes back as
+    /// it always did, and the timer is cancelled rather than left running.
+    @Test func testTimeoutThatIsNotReachedLeavesTheAnswerUntouched() async throws {
+        let facade = TonConnect(engine: FakeEngine(), autoRestore: false)
+        let response = try await facade.sendTransaction(makePayload(), timeout: .seconds(30))
+        #expect(response == .success(result: "te6ccFakeBoc", id: "1"))
+        #expect(facade.operation == .success(kind: .sendTransaction))
+    }
+
+    /// The contract before this parameter existed, kept verbatim for `nil`:
+    /// the call waits, and only cancelling the Task ends it.
+    @Test func testSendTransactionWithoutTimeoutEndsOnlyWithTaskCancellation() async throws {
+        let engine = HangingEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        let payload = makePayload()
+        let call = Task { try await facade.sendTransaction(payload) }
+        for _ in 0..<200 where engine.calls == 0 {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        #expect(engine.calls == 1, "the engine call started")
+        call.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await call.value }
+    }
+
+    /// Retry repeats the request under the same deadline it was given.
+    @Test func testRetryLastOperationReusesTheTimeout() async throws {
+        let engine = HangingEngine()
+        let facade = TonConnect(engine: engine, autoRestore: false)
+        _ = try? await facade.sendTransaction(makePayload(), timeout: .milliseconds(50))
+        #expect(engine.cancellations == 1)
+
+        facade.retryLastOperation()
+        for _ in 0..<200 where engine.cancellations < 2 {
+            try? await Task.sleep(nanoseconds: 5_000_000)   // ceiling: 1s ≫ 50ms
+        }
+        #expect(engine.cancellations == 2, "the retry timed out too — it carried the deadline")
+    }
+}
+
+/// An engine that never answers. Every wallet round trip sleeps until its Task is
+/// cancelled and then rethrows the CancellationError, the way both real engines
+/// resolve a pending ticket on cancel. Records how many calls started and how many
+/// were cancelled, so a test can tell "timed out and cleaned up" from "timed out
+/// and left the request hanging".
+final class HangingEngine: TonConnectEngine, @unchecked Sendable {
+    let events: AsyncStream<TonConnectEvent>
+    private let continuation: AsyncStream<TonConnectEvent>.Continuation
+    private let lock = NSLock()
+    private var _calls = 0
+    private var _cancellations = 0
+
+    var calls: Int { lock.withLock { _calls } }
+    var cancellations: Int { lock.withLock { _cancellations } }
+
+    init() {
+        var continuation: AsyncStream<TonConnectEvent>.Continuation!
+        self.events = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+    }
+
+    private func hang<T>() async throws -> T {
+        lock.withLock { _calls += 1 }
+        do {
+            while true { try await Task.sleep(nanoseconds: 1_000_000_000) }
+        } catch {
+            lock.withLock { _cancellations += 1 }
+            throw error
+        }
+    }
+
+    func connect(source: WalletConnectionSource, items: [ConnectItem]) async throws -> ConnectEvent {
+        try await hang()
+    }
+    func connectUniversal(bridgeURLs: [String], items: [ConnectItem]) async throws -> ConnectEvent {
+        try await hang()
+    }
+    func restoreConnection() async throws {
+        throw TonConnectError.decodeFailure("no saved session to restore")
+    }
+    func sendTransaction(_ payload: SendTransactionPayload) async throws -> WalletResponse {
+        try await hang()
+    }
+    func signData(_ payload: SignDataPayload) async throws -> WalletResponse {
+        try await hang()
+    }
+    func disconnect() async throws {}
 }
 
 /// A tiny thread-safe counter. The payload closure is @Sendable — it cannot reach

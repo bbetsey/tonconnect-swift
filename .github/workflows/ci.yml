@@ -114,6 +114,60 @@ jobs:
             echo "</details>"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  swift6:
+    name: Swift 6 language mode
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Package.swift stays at swift-tools-version 5.10 on purpose: raising it to
+      # 6.0 would raise the minimum Xcode for every consumer to 16. The flags
+      # below turn on the Swift 6 language mode for this build only, so the
+      # package is proven to compile under strict concurrency checking without
+      # demanding it of anyone. Build only — the tests run in the other jobs.
+      - name: Build with -swift-version 6
+        run: swift build -Xswiftc -swift-version -Xswiftc 6
+
+  simulator:
+    name: iOS simulator
+    runs-on: macos-latest
+    # A hang is this job's failure mode, not a red assertion: the suite used to
+    # sit forever on the simulator (a JS promise whose resolver GC had collected,
+    # then a fake wallet answering before its POST completed). The cap turns a
+    # regression into a failure within minutes instead of a six-hour runner.
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      # `swift test` runs on macOS, where #if canImport(UIKit) removes
+      # SystemWalletOpener and the convenience initializer TonConnect(manifestUrl:)
+      # — the entry point the README opens with — before the tests ever see them.
+      # This job is the only place the package is tested on the platform it ships
+      # for. The device name is resolved at run time because runner images change
+      # which simulators they carry.
+      - name: Test on the iOS simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+[^(]*' | sed 's/ *$//')
+          echo "simulator: $DEVICE"
+          xcodebuild test \
+            -scheme TonConnect-Package \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -resultBundlePath "$RUNNER_TEMP/simulator.xcresult" \
+            -quiet
+
+      # With -quiet the log of a failed run names the test and nothing else: no
+      # failed expectation, no message, no timing. Twice in a row (PR #39, #40)
+      # a test failed on the first attempt and passed on the re-run, and the log
+      # left nothing to diagnose. The result bundle keeps all of it — open it in
+      # Xcode, or `xcrun xcresulttool get test-results tests --path <bundle>`.
+      - name: Keep the result bundle of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: simulator-xcresult
+          path: ${{ runner.temp }}/simulator.xcresult
+          retention-days: 14
+
   example:
     name: Example app
     runs-on: macos-latest

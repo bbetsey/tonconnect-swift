@@ -4,7 +4,8 @@ import Combine
 /// The public TON Connect facade. Engine-agnostic: holds an injected
 /// any TonConnectEngine (swapping the core is a one-line composition-root change).
 /// Calls restore itself on creation (state passes through .restoring).
-/// A single observable enum state. No timeouts, but methods are Task-cancellable.
+/// A single observable enum state. Methods are Task-cancellable; every wallet
+/// round trip also takes an optional `timeout:`, nil by default (no deadline).
 @MainActor
 public final class TonConnect: ObservableObject {
     @Published public private(set) var state: ConnectionState = .disconnected
@@ -79,13 +80,24 @@ public final class TonConnect: ObservableObject {
     }
 
     /// Connects to one chosen wallet: opens it with a connect link and waits for
-    /// the reply over the bridge. Throws if the wallet refuses or the attempt is
-    /// cancelled; on success `state` becomes `.connected` and `account` is filled.
-    public func connect(source: WalletConnectionSource, items: [ConnectItem]) async throws {
+    /// the reply over the bridge. Throws if the wallet refuses, the attempt is
+    /// cancelled or `timeout` passes; on success `state` becomes `.connected`
+    /// and `account` is filled.
+    ///
+    /// - Parameters:
+    ///   - source: the wallet to open — its universal link and bridge URL.
+    ///   - items: what to ask the wallet for; `.tonAddress` at the least.
+    ///   - timeout: how long to wait for the wallet, counted from this call and
+    ///     including the time the user spends in the wallet app. `nil`, the
+    ///     default, waits as long as it takes. See ``sendTransaction(_:timeout:)``.
+    public func connect(source: WalletConnectionSource, items: [ConnectItem],
+                        timeout: Duration? = nil) async throws {
         connectLink = nil
         state = .connecting
         do {
-            let event = try await engine.connect(source: source, items: items)
+            let event = try await Self.withTimeout(timeout) { [engine] in
+                try await engine.connect(source: source, items: items)
+            }
             state = Self.stateFromConnectEvent(event) ?? .disconnected
             connectedWalletName = Self.walletName(from: event) ?? connectedWalletName
             connectLink = nil
@@ -98,11 +110,21 @@ public final class TonConnect: ObservableObject {
     
     /// "Second device" QR connect: the link is published to connectLink, no wallet
     /// is opened on this device. The reply arrives over the bridge.
-    public func connectWithQR(bridgeURLs: [String], items: [ConnectItem]) async throws {
+    ///
+    /// - Parameters:
+    ///   - bridgeURLs: the bridges of every wallet the QR should reach; the first
+    ///     one to answer wins.
+    ///   - items: what to ask the wallet for; `.tonAddress` at the least.
+    ///   - timeout: how long to keep the QR offer open. `nil`, the default,
+    ///     waits as long as it takes. See ``sendTransaction(_:timeout:)``.
+    public func connectWithQR(bridgeURLs: [String], items: [ConnectItem],
+                              timeout: Duration? = nil) async throws {
         connectLink = nil
         state = .connecting
         do {
-            let event = try await engine.connectUniversal(bridgeURLs: bridgeURLs, items: items)
+            let event = try await Self.withTimeout(timeout) { [engine] in
+                try await engine.connectUniversal(bridgeURLs: bridgeURLs, items: items)
+            }
             state = Self.stateFromConnectEvent(event) ?? .disconnected
             connectedWalletName = Self.walletName(from: event) ?? connectedWalletName
             connectLink = nil
@@ -121,8 +143,23 @@ public final class TonConnect: ObservableObject {
     /// round trip for the UI.
     /// A retry repeats THIS payload verbatim, `validUntil` included. When the
     /// payload carries an expiry, take the closure overload below instead.
-    public func sendTransaction(_ payload: SendTransactionPayload) async throws -> WalletResponse {
-        try await sendTransaction { payload }
+    ///
+    /// - Parameters:
+    ///   - payload: the transaction, sent as is; `from` is filled from the
+    ///     connected account when left `nil`.
+    ///   - timeout: how long to wait for the wallet's answer, counted from this
+    ///     call. `nil`, the default, waits as long as it takes — a wallet request
+    ///     has no natural deadline, and only cancelling the calling Task ends the
+    ///     wait. With a deadline, the clock covers the whole round trip: reaching
+    ///     the bridge, the user switching to the wallet, reading and approving the
+    ///     request, and the reply coming back. So it is a budget for a person, not
+    ///     for a network call — minutes, not seconds. When it passes, the request
+    ///     is cancelled and ``TonConnectError/timeout(after:)`` is thrown;
+    ///     `operation` shows a connection problem with a Retry, which repeats the
+    ///     request under the same deadline.
+    public func sendTransaction(_ payload: SendTransactionPayload,
+                                timeout: Duration? = nil) async throws -> WalletResponse {
+        try await sendTransaction(timeout: timeout) { payload }
     }
 
     /// Same request, but the payload is built at the moment of sending — including
@@ -141,14 +178,21 @@ public final class TonConnect: ObservableObject {
     ///                            network: account.network, from: nil, messages: messages)
     /// }
     /// ```
+    ///
+    /// `timeout` is the same optional deadline as on ``sendTransaction(_:timeout:)``.
     public func sendTransaction(
+        timeout: Duration? = nil,
         _ makePayload: @escaping @Sendable () -> SendTransactionPayload
     ) async throws -> WalletResponse {
         operation = .pending(kind: .sendTransaction)
         isOperationRequestSent = false
-        lastOperation = { [weak self] in _ = try? await self?.sendTransaction(makePayload) }
+        lastOperation = { [weak self] in
+            _ = try? await self?.sendTransaction(timeout: timeout, makePayload)
+        }
         do {
-            let response = try await engine.sendTransaction(makePayload())
+            let response = try await Self.withTimeout(timeout) { [engine] in
+                try await engine.sendTransaction(makePayload())
+            }
             if case .error(let code, let message, _) = response {
                 operation = .failure(fromWalletResponseError: code, message: message)
             } else {
@@ -162,22 +206,29 @@ public final class TonConnect: ObservableObject {
     }
 
     /// Asks the wallet to sign text, raw bytes or a cell. Same contract as
-    /// `sendTransaction(_:)`: a refusal arrives as `WalletResponse.error`.
-    public func signData(_ payload: SignDataPayload) async throws -> WalletResponse {
-        try await signData { payload }
+    /// ``sendTransaction(_:timeout:)``: a refusal arrives as `WalletResponse.error`,
+    /// and `timeout` is the same optional deadline.
+    public func signData(_ payload: SignDataPayload,
+                         timeout: Duration? = nil) async throws -> WalletResponse {
+        try await signData(timeout: timeout) { payload }
     }
 
     /// Same request, but the payload is built at the moment of signing — including
-    /// on a retry. See the closure overload of `sendTransaction(_:)` for why a
+    /// on a retry. See the closure overload of `sendTransaction` for why a
     /// captured payload can go stale between the first attempt and the second.
     public func signData(
+        timeout: Duration? = nil,
         _ makePayload: @escaping @Sendable () -> SignDataPayload
     ) async throws -> WalletResponse {
         operation = .pending(kind: .signData)
         isOperationRequestSent = false
-        lastOperation = { [weak self] in _ = try? await self?.signData(makePayload) }
+        lastOperation = { [weak self] in
+            _ = try? await self?.signData(timeout: timeout, makePayload)
+        }
         do {
-            let response = try await engine.signData(makePayload())
+            let response = try await Self.withTimeout(timeout) { [engine] in
+                try await engine.signData(makePayload())
+            }
             if case .error(let code, let message, _) = response {
                 operation = .failure(fromWalletResponseError: code, message: message)
             } else {
@@ -212,6 +263,34 @@ public final class TonConnect: ObservableObject {
         lastOperation = nil // a retry without a session is meaningless
         connectLink = nil // the QR link is dead without a session too
         connectedWalletName = nil
+    }
+
+    // MARK: - deadline
+
+    /// Runs one wallet round trip under an optional deadline.
+    ///
+    /// `nil` is the old contract unchanged: the engine call is awaited directly
+    /// and only cancelling the calling Task ends it. With a deadline the call
+    /// races a timer in a task group; the first to finish wins and the other is
+    /// cancelled. Both engines honour cancellation by resolving their pending
+    /// ticket, so a timed-out request does not linger — a wallet that answers
+    /// after the deadline is ignored, exactly as after a cancel. Cancelling the
+    /// calling Task still works: the group's children are cancelled with it.
+    private static func withTimeout<T: Sendable>(
+        _ timeout: Duration?,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        guard let timeout else { return try await operation() }
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw TonConnectError.timeout(after: timeout)
+            }
+            defer { group.cancelAll() } // the loser, whichever it is
+            // Two children were added, so the first result cannot be nil.
+            return try await group.next()!
+        }
     }
 
     // MARK: - events (the single source of wallet-initiated events)

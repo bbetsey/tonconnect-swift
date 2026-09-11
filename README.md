@@ -9,10 +9,9 @@ No web view, no JavaScript runtime on the critical path: the protocol — sessio
 crypto, the SSE bridge, the RPC envelope — is implemented in Swift, and the
 wallet picker, the connect button and the operation sheet are plain SwiftUI views.
 
-> **Status: pre-release.** The package works end to end and is exercised against
-> live wallets on a real device. While the major version is zero the public API
-> may still change — but a release that breaks it is 1.0.0, not another 0.x, so
-> the version requirement below is safe to take as written.
+> **Status: 1.0.** The package works end to end and is exercised against live
+> wallets on a real device. The public API is stable: a release that breaks it
+> is 2.0.0, so the version requirement below is safe to take as written.
 
 > **Unofficial.** This is an independent implementation, not affiliated with or
 > endorsed by the TON Foundation or tonkeeper. It implements the dApp side of the
@@ -47,7 +46,7 @@ Add the package with Swift Package Manager:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "0.2.0")
+    .package(url: "https://github.com/bbetsey/tonconnect-swift.git", from: "1.0.0")
 ]
 ```
 
@@ -111,7 +110,10 @@ struct ContentView: View {
 ```
 
 `TonConnect` is an `ObservableObject`: `state`, `account`, `operation` and
-`connectLink` drive your own views just as well.
+`connectLink` drive your own views just as well. For a QR of your own,
+`connectWithQR(items:)` from `TonConnectUI` subscribes to the bridge of every
+wallet in the registry and publishes the link to render in `connectLink`;
+`connectWithQR(wallets:items:)` does the same for the wallets you choose.
 
 ![Picking a wallet, scanning the QR to connect from another device, waiting for the wallet to confirm, and the transaction sent](.github/flow.jpg)
 
@@ -137,6 +139,16 @@ _ = try await tonConnect.sendTransaction {
 The closure runs again if the user retries after a connection problem, so
 `validUntil` is recomputed rather than replayed. Passing a payload by value works
 too, and then a retry resends it verbatim — expiry included.
+
+By default the call waits for the wallet for as long as it takes; cancelling the
+Task is the only way out. An optional `timeout:` puts a deadline on the whole
+round trip — including the minutes a person may spend reading the request in the
+wallet — after which the request is cancelled and `TonConnectError.timeout` is
+thrown:
+
+```swift
+_ = try await tonConnect.sendTransaction(timeout: .seconds(180)) { … }
+```
 
 ## Signing data
 

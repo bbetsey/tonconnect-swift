@@ -92,14 +92,15 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     private func enqueuePersistReturning<T: Sendable>(
         _ operation: @escaping @Sendable () async -> T
     ) async -> T {
-        lock.lock()
-        let previous = persistChain
-        let task = Task<T, Never> {
-            await previous.value
-            return await operation()
+        let task: Task<T, Never> = lock.withLock {
+            let previous = persistChain
+            let task = Task<T, Never> {
+                await previous.value
+                return await operation()
+            }
+            persistChain = Task { _ = await task.value }
+            return task
         }
-        persistChain = Task { _ = await task.value }
-        lock.unlock()
         return await task.value
     }
 
@@ -167,12 +168,12 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
                                              items: items)
         } catch { throw NativeErrorMapper.map(error) }
 
-        lock.lock()
-        sessionCrypto = crypto
-        currentBridgeUrl = source.bridgeUrl
-        lastWalletEventId = nil // new session — wallet-event count restarts (otherwise the replay guard would reject id=1)
-        universalBridgeURLs = []
-        lock.unlock()
+        lock.withLock {
+            sessionCrypto = crypto
+            currentBridgeUrl = source.bridgeUrl
+            lastWalletEventId = nil // new session — wallet-event count restarts (otherwise the replay guard would reject id=1)
+            universalBridgeURLs = []
+        }
         // The previous session's tickets can never be answered, and its id counter
         // restarts here — leaving them would let a new request overwrite a live ticket.
         failAllPendingRPC(Self.sessionEndedError)
@@ -480,9 +481,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     public func restoreConnection() async throws {
         // Await the tail of the FIFO persistence chain: connect may have just
         // enqueued a save (a consumer may legitimately call restore right after connect).
-        lock.lock()
-        let chain = persistChain
-        lock.unlock()
+        let chain = lock.withLock { persistChain }
         await chain.value
 
         let session: NativeSession?
@@ -505,13 +504,13 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         catch { throw NativeErrorMapper.map(error) }
         do {
             let crypto = try SessionCrypto(keyPair: (session.publicKeyHex, session.secretKeyHex))
-            lock.lock()
-            sessionCrypto = crypto
-            currentBridgeUrl = bridgeUrl
-            lastWalletEventId = session.lastWalletEventId
-            walletPublicKey = session.walletPublicKeyHex.flatMap { try? HexCoding.hexToByteArray($0) }
-            accountAddress = Self.accountAddress(from: restoredEvent)
-            lock.unlock()
+            lock.withLock {
+                sessionCrypto = crypto
+                currentBridgeUrl = bridgeUrl
+                lastWalletEventId = session.lastWalletEventId
+                walletPublicKey = session.walletPublicKeyHex.flatMap { try? HexCoding.hexToByteArray($0) }
+                accountAddress = Self.accountAddress(from: restoredEvent)
+            }
             // Reopen SSE with the saved last_event_id — monotonicity continues.
             openGateway(bridgeUrl: bridgeUrl, clientId: session.sessionId,
                         lastEventId: session.lastEventId)
@@ -525,9 +524,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         // JS SDK parity (bundle.js:6009): from ?? account.address. Tonkeeper
         // REQUIRES from/source (SendTransactionParam.init throws without them) and
         // silently drops the request — tonkeeper/ios sources, observed on a live wallet.
-        lock.lock()
-        let account = accountAddress
-        lock.unlock()
+        let account = lock.withLock { accountAddress }
         let filled: SendTransactionPayload
         if payload.from == nil, let account {
             filled = SendTransactionPayload(validUntil: payload.validUntil,
@@ -554,11 +551,9 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// (wallets are not required to reply) — awaiting an SSE reply here would hang
     /// forever. Then local teardown: clear (native key only) → close → .disconnected.
     public func disconnect() async throws {
-        lock.lock()
-        let crypto = sessionCrypto
-        let walletKey = walletPublicKey
-        let bridgeUrl = currentBridgeUrl
-        lock.unlock()
+        let (crypto, walletKey, bridgeUrl) = lock.withLock {
+            (sessionCrypto, walletPublicKey, currentBridgeUrl)
+        }
         guard let crypto, let walletKey, let bridgeUrl else {
             throw TonConnectError.internalError(message: "no active session to disconnect")
         }
@@ -580,14 +575,15 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
 
         let store = store
         persist("clear the session") { try await $0.clear() }
-        lock.lock()
-        let chain = persistChain
-        let g = gateway
-        gateway = nil
-        sessionCrypto = nil
-        walletPublicKey = nil
-        accountAddress = nil
-        lock.unlock()
+        let (chain, g): (Task<Void, Never>, ReconnectGateway?) = lock.withLock {
+            let chain = persistChain
+            let g = gateway
+            gateway = nil
+            sessionCrypto = nil
+            walletPublicKey = nil
+            accountAddress = nil
+            return (chain, g)
+        }
         failAllPendingRPC(Self.sessionEndedError)
         g?.close()
         await chain.value // clear has landed: restore after disconnect will throw
@@ -598,11 +594,9 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// so a crash cannot reuse an id), encrypt→base64→POST; the wallet's reply arrives as an SSE
     /// frame → handleWalletResponse.
     private func performRPC(method: String, paramsJSON: [String]) async throws -> WalletResponse {
-        lock.lock()
-        let crypto = sessionCrypto
-        let walletKey = walletPublicKey
-        let bridgeUrl = currentBridgeUrl
-        lock.unlock()
+        let (crypto, walletKey, bridgeUrl) = lock.withLock {
+            (sessionCrypto, walletPublicKey, currentBridgeUrl)
+        }
         guard let crypto, let walletKey, let bridgeUrl else {
             throw TonConnectError.internalError(message: "no active session for RPC \(method)")
         }
@@ -656,15 +650,43 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// (code 300 et al.) is a TYPED WalletResponse.error, NOT a throw
     /// (contract).
     private func handleWalletResponse(json: String) {
-        guard let response = try? JSONDecoder().decode(WalletResponse.self, from: Data(json.utf8)) else {
+        if let response = try? JSONDecoder().decode(WalletResponse.self, from: Data(json.utf8)) {
+            resolvePendingRPC(id: Self.responseID(of: response), .success(response))
             return
         }
-        let id: String
+        // Wire tolerance: a wallet that answers without `id`. Such a frame cannot be
+        // correlated, so it is adopted only when exactly one request is in flight —
+        // then there is nothing to confuse it with. With two or more it is dropped:
+        // resolving the wrong operation is worse than resolving none. Before this,
+        // every such frame was dropped and the operation simply never returned.
+        lock.lock()
+        let soleID = pendingRPC.count == 1 ? pendingRPC.keys.first : nil
+        lock.unlock()
+        guard let soleID,
+              let response = Self.decode(json: json, adoptingID: soleID) else { return }
+        resolvePendingRPC(id: soleID, .success(response))
+    }
+
+    private static func responseID(of response: WalletResponse) -> String {
         switch response {
-        case .success(_, let responseId): id = responseId
-        case .error(_, _, let responseId): id = responseId
+        case .success(_, let id): return id
+        case .error(_, _, let id): return id
         }
-        resolvePendingRPC(id: id, .success(response))
+    }
+
+    /// Re-decodes a frame that carries no `id` by inserting one and handing it to the
+    /// same WalletResponse decoder — so every other wire tolerance (an object result,
+    /// an error without a message, a numeric id) keeps applying, with no second copy
+    /// of that logic. An `id` that is present but unusable is NOT repaired: absence is
+    /// a wallet habit, a malformed value is corruption.
+    private static func decode(json: String, adoptingID id: String) -> WalletResponse? {
+        guard var object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
+              object["id"] == nil,
+              object["result"] != nil || object["error"] != nil
+        else { return nil }
+        object["id"] = id
+        guard let repaired = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return try? JSONDecoder().decode(WalletResponse.self, from: repaired)
     }
 
     /// Exactly one resume per ticket (same discipline as resolvePendingConnect).
@@ -751,17 +773,18 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
                                              items: items)
         } catch { throw NativeErrorMapper.map(error) }
 
-        lock.lock()
-        let oldGateway = gateway
-        gateway = nil
-        let oldUniversal = universalGateways
-        universalGateways = []
-        sessionCrypto = crypto
-        currentBridgeUrl = nil
-        lastWalletEventId = nil
-        universalWinner = nil
-        universalBridgeURLs = bridgeURLs
-        lock.unlock()
+        let (oldGateway, oldUniversal): (ReconnectGateway?, [ReconnectGateway]) = lock.withLock {
+            let oldGateway = gateway
+            gateway = nil
+            let oldUniversal = universalGateways
+            universalGateways = []
+            sessionCrypto = crypto
+            currentBridgeUrl = nil
+            lastWalletEventId = nil
+            universalWinner = nil
+            universalBridgeURLs = bridgeURLs
+            return (oldGateway, oldUniversal)
+        }
         failAllPendingRPC(Self.sessionEndedError) // same session boundary as connect
         oldGateway?.close() // tear down the old, same as connect
         for stale in oldUniversal { stale.close() }
@@ -874,12 +897,10 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     private func unpause() {
         Task { [weak self] in
             guard let self else { return }
-            self.lock.lock()
-            let crypto = self.sessionCrypto
-            let bridgeUrl = self.currentBridgeUrl
-            let hasPending = self.pendingConnect != nil
-            let universalURLs = self.universalBridgeURLs
-            self.lock.unlock()
+            let (crypto, bridgeUrl, hasPending, universalURLs) = self.lock.withLock {
+                (self.sessionCrypto, self.currentBridgeUrl,
+                 self.pendingConnect != nil, self.universalBridgeURLs)
+            }
 
             if hasPending, let crypto {
                 if !universalURLs.isEmpty {
@@ -892,9 +913,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
 
             guard let session = try? await self.store.load(),
                   let savedBridge = session.bridgeUrl else { return }
-            self.lock.lock()
-            let active = self.sessionCrypto != nil
-            self.lock.unlock()
+            let active = self.lock.withLock { self.sessionCrypto != nil }
             guard active else { return }
             self.openGateway(bridgeUrl: savedBridge, clientId: session.sessionId,
                              lastEventId: session.lastEventId)

@@ -76,6 +76,15 @@ private final class CapturedText: @unchecked Sendable {
     var value: String? { lock.lock(); defer { lock.unlock() }; return _value }
 }
 
+/// Collects the ids of every RPC the fake wallet has seen, in arrival order.
+private final class CapturedIDs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _ids: [String] = []
+    @discardableResult
+    func append(_ id: String) -> Int { lock.lock(); defer { lock.unlock() }; _ids.append(id); return _ids.count }
+    var ids: [String] { lock.lock(); defer { lock.unlock() }; return _ids }
+}
+
 @Suite(.serialized) struct NativeEngineConnectTests {
 
     static let connectSuccessJSON = """
@@ -546,5 +555,75 @@ private final class CapturedText: @unchecked Sendable {
 
         // The UI gates waking the wallet on this event (SDK parity: onRequestSent).
         #expect(await waitUntil { collector.all.contains(.requestSent) })
+    }
+    
+    @Test func testWalletResponseWithoutIDResolvesTheOnlyRequestInFlight() async throws {
+        let storage = InMemoryStorage()
+        let wallet = WalletSimulator()
+        let engine = makeEngine(storage: storage)
+        installProvider(wallet: wallet)
+        _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
+        let store = NativeSessionStore(storage: storage)
+        let session = await pollSession(store) { $0?.walletPublicKeyHex != nil }
+        let clientId = try #require(session?.sessionId)
+
+        // The wallet answers without `id` — unmatchable by the spec's rule, and the
+        // frame used to be dropped, leaving sendTransaction awaiting forever.
+        ConnectFakeBridge.messageHandler = { _, _ in
+            ConnectFakeBridge.pushFrame(id: nil, data: wallet.frame("{\"result\":\"boc\"}", to: clientId))
+        }
+
+        let payload = SendTransactionPayload(validUntil: 1_785_221_364, network: "-3",
+                                             from: nil, messages: [])
+        let response = try await engine.sendTransaction(payload)
+
+        guard case .success(let result, _) = response else {
+            Issue.record("expected .success, got \(response)")
+            return
+        }
+        #expect(result == "boc")
+    }
+
+    @Test func testWalletResponseWithoutIDIsDroppedWhenTwoRequestsAreInFlight() async throws {
+        let storage = InMemoryStorage()
+        let wallet = WalletSimulator()
+        let engine = makeEngine(storage: storage)
+        installProvider(wallet: wallet)
+        _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
+        let store = NativeSessionStore(storage: storage)
+        let session = await pollSession(store) { $0?.walletPublicKeyHex != nil }
+        let clientId = try #require(session?.sessionId)
+
+        // Nothing is answered until both requests have been posted, so both tickets
+        // are pending when the stray frame arrives. A ticket is registered before its
+        // POST goes out (performRPC), so seeing the second body means there are two.
+        let seen = CapturedIDs()
+        ConnectFakeBridge.messageHandler = { _, body in
+            guard let decrypted = wallet.decryptRPCBody(body, from: clientId),
+                  let data = decrypted.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let id = object["id"] as? String else { return }
+            guard seen.append(id) == 2 else { return }
+            // The stray reply: no id, two tickets - it must resolve neither. The real
+            // replies follow, so both awaits return whatever the engine decided.
+            ConnectFakeBridge.pushFrame(id: nil, data: wallet.frame("{\"result\":\"stray\"}", to: clientId))
+            for id in seen.ids {
+                ConnectFakeBridge.pushFrame(id: nil, data: wallet.frame("{\"result\":\"boc-\(id)\",\"id\":\"\(id)\"}", to: clientId))
+            }
+        }
+
+        let payload = SendTransactionPayload(validUntil: nil, network: nil, from: nil, messages: [])
+        async let first = engine.sendTransaction(payload)
+        async let second = engine.sendTransaction(payload)
+        let responses = try await [first, second]
+
+        for response in responses {
+            guard case .success(let result, let id) = response else {
+                Issue.record("expected success, got \(response)")
+                return
+            }
+            #expect(result == "boc-\(id)",
+                    "a stray reply must not resolve a ticket it cannot name; got \(result) for \(id)")
+        }
     }
 }

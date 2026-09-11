@@ -1,0 +1,4 @@
+module CTweetNacl {
+    umbrella "/Users/anton/Documents/develop/ai/tonconnect-swift/Sources/CTweetNacl/include"
+    export *
+}

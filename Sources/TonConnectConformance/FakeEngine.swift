@@ -86,12 +86,12 @@ public final class FakeEngine: TonConnectEngine, @unchecked Sendable {
     }
 
     public func connect(source: WalletConnectionSource, items: [ConnectItem]) async throws -> ConnectEvent {
-        lock.lock()
-        _recordedCalls.append("connect")
-        _lastConnectSource = source
-        _lastConnectItems = items
-        _hasSavedSession = true
-        lock.unlock()
+        lock.withLock {
+            _recordedCalls.append("connect")
+            _lastConnectSource = source
+            _lastConnectItems = items
+            _hasSavedSession = true
+        }
         if let url = URL(string: source.universalLink) {
             eventContinuation.yield(.connectLinkGenerated(url))
         }
@@ -99,44 +99,42 @@ public final class FakeEngine: TonConnectEngine, @unchecked Sendable {
     }
     
     public func connectUniversal(bridgeURLs: [String], items: [ConnectItem]) async throws -> ConnectEvent {
-        lock.lock()
-        _recordedCalls.append("connectUniversal")
-        _hasSavedSession = true
-        lock.unlock()
+        lock.withLock {
+            _recordedCalls.append("connectUniversal")
+            _hasSavedSession = true
+        }
         eventContinuation.yield(.connectLinkGenerated(URL(string: "tc://fake-universal")!))
         return cannedConnectEvent
     }
 
     public func restoreConnection() async throws {
-        lock.lock()
-        _recordedCalls.append("restore")
-        let hasSession = _hasSavedSession
-        lock.unlock()
+        let hasSession = lock.withLock {
+            _recordedCalls.append("restore")
+            return _hasSavedSession
+        }
         guard hasSession else {
             throw TonConnectError.decodeFailure("no saved session to restore")
         }
     }
 
     public func sendTransaction(_ payload: SendTransactionPayload) async throws -> WalletResponse {
-        lock.lock()
-        _recordedCalls.append("sendTransaction")
-        _lastSentTransaction = payload
-        lock.unlock()
+        lock.withLock {
+            _recordedCalls.append("sendTransaction")
+            _lastSentTransaction = payload
+        }
         return cannedSendTransactionResponse
     }
 
     public func signData(_ payload: SignDataPayload) async throws -> WalletResponse {
-        lock.lock()
-        _recordedCalls.append("signData")
-        lock.unlock()
+        lock.withLock { _recordedCalls.append("signData") }
         return cannedSignDataResponse
     }
 
     public func disconnect() async throws {
-        lock.lock()
-        _recordedCalls.append("disconnect")
-        _hasSavedSession = false
-        lock.unlock()
+        lock.withLock {
+            _recordedCalls.append("disconnect")
+            _hasSavedSession = false
+        }
         eventContinuation.yield(.disconnected)
     }
 }

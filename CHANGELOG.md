@@ -2,11 +2,88 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the major version is zero the public API may still change. Semantic
-Versioning permits a zero-major package to break its API in a minor release, and
-this one does not take that permission: a release that breaks the public API is
-1.0.0. That is what makes the `from:` requirement in the installation snippet
-safe to follow — every version it accepts is meant to keep compiling.
+From 1.0.0 on, a release that breaks the public API moves the major number, and
+nothing else does. Before that, while the major was zero, the package already
+held itself to the same rule rather than to the weaker one Semantic Versioning
+allows a zero-major package. That is what makes the `from:` requirement in the
+installation snippet safe to follow — every version it accepts is meant to keep
+compiling.
+
+## 1.0.0 — 2026-09-11
+
+The first release whose public API is a promise: from here on, a change that
+would break a consumer is a 2.0.0, not a footnote in a minor. Everything on the
+pre-1.0 list is closed — the suite runs on the platform the package ships for,
+the package builds under Swift 6, a request can be given a deadline, and a QR
+connect no longer needs the bridge list spelled out. One name stays as it is,
+knowingly: `opensWalletAutomatically` governs every jump into the wallet by
+link, not only the automatic one; the name is narrower than the behaviour, and
+it is kept because renaming it would cost every consumer a change for a word.
+
+This release contains one change that can break a build: the new
+`TonConnectError.timeout(after:)` case, described below. An exhaustive `switch`
+over the error needs a new arm. It is the reason this is 1.0.0 and not 0.3.0.
+
+### Added
+
+- `TonConnectUI` extends `TonConnect` with `connectWithQR(items:timeout:)`, the
+  "second device" QR connect with the bridges filled in from the wallet
+  registry — the disk cache if there is one, otherwise the bundled snapshot,
+  with a quiet network refresh for next time, exactly as the picker does. A
+  second overload, `connectWithQR(wallets:items:timeout:)`, takes a list of
+  registry entries you filtered yourself. `WalletsListEntry.sseBridgeURLs(of:)`
+  is the helper both use, and the picker now uses it too. Until now an app that
+  drew its own QR had to gather the bridge URLs by hand.
+
+- An optional `timeout:` on every wallet round trip of `TonConnect` —
+  `connect`, `connectWithQR`, `sendTransaction` and `signData`, both overloads.
+  The default `nil` keeps the old contract: the call waits for the wallet for as
+  long as it takes, and only cancelling the Task ends it. With a deadline the
+  request is cancelled when it passes and the new `TonConnectError.timeout(after:)`
+  is thrown; the operation state shows a connection problem with a Retry, and the
+  retry runs under the same deadline. The clock covers the whole round trip,
+  including the time a person spends in the wallet, so it is a budget of minutes,
+  not seconds. Adding the enum case is the one source-breaking part: an
+  exhaustive `switch` over `TonConnectError` needs a new arm.
+
+- The test suite now runs on the iOS simulator in CI, alongside the macOS run.
+  On macOS `#if canImport(UIKit)` removes `SystemWalletOpener` and the convenience
+  initializer `TonConnect(manifestUrl:)` before the tests see them, so until now
+  the package's entry point was never exercised by an automated test on the
+  platform it ships for. Two tests are deliberately not run there: the Keychain
+  spike (a package test bundle carries no entitlement, so every write fails with
+  `errSecMissingEntitlement`) and a garbage-collection experiment whose premise
+  the simulator's collector does not share.
+
+### Changed
+
+- The package builds in the Swift 6 language mode, and CI now checks that it
+  keeps doing so. Until now a consumer compiling with strict concurrency saw
+  44 errors: `NSLock.lock()`/`unlock()` around short critical sections in async
+  code (now `withLock`), a mutable static behind a lock the compiler could not
+  see, and two JavaScriptCore values captured by cancellation and storage
+  closures. `Package.swift` stays at tools version 5.10, so nothing is required
+  of consumers who are not there yet.
+
+### Fixed
+
+- The JavaScriptCore engine no longer hangs in `restoreConnection` when the
+  collector runs before a storage read completes. The resolvers of the promise
+  bridging a Swift storage read into JavaScript were held as
+  `JSManagedValue(value:andOwner:)`, which JavaScriptCore keeps only while the
+  value is reachable from the JS graph or from an owner registered through
+  `addManagedReference` - and nothing referenced a promise's own resolve
+  function. A timely collection freed it, the read never settled, and the SDK's
+  restore waited forever; the iOS simulator hit this on every run. The resolvers
+  are now held strongly for the duration of the read.
+
+- A wallet reply without an `id` no longer leaves the operation waiting forever.
+  Some wallets omit the `id` the spec requires; such a frame failed to decode and
+  was dropped, so `sendTransaction` or `signData` never returned and the only way
+  out was cancelling the task. The frame is now adopted when exactly one request
+  is in flight, where there is nothing to confuse it with. With two or more in
+  flight it is still dropped, deliberately: resolving the wrong operation is worse
+  than resolving none. An `id` that is present but malformed is not repaired.
 
 ## 0.2.3 — 2026-08-09
 

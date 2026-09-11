@@ -28,6 +28,10 @@ public enum OperationState: Equatable, Sendable {
             return .walletDeclined(message: message)
         case .network(let message):
             return .networkProblem(message: message)
+        case .timeout:
+            // Red with a Retry, like a dropped connection: the request may well
+            // succeed the second time, and the user has nothing else to correct.
+            return .networkProblem(message: tc.errorDescription ?? "the wallet did not answer in time")
         case .internalError(let message):
             return .networkProblem(message: message)
         case .decodeFailure(let message):

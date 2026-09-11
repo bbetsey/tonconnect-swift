@@ -122,9 +122,7 @@ final class ReconnectGateway: @unchecked Sendable {
         Task { [weak self] in
             guard let self else { return }
             try? await self.clock.sleep(seconds: delay)
-            self.lock.lock()
-            self.reconnectPending = false
-            self.lock.unlock()
+            self.lock.withLock { self.reconnectPending = false }
             self.openSource() // re-checks isClosed under the lock itself
         }
     }
@@ -142,9 +140,9 @@ final class ReconnectGateway: @unchecked Sendable {
         Task { [weak self] in
             guard let self else { return }
             try? await self.clock.sleep(seconds: self.heartbeatTimeout)
-            self.lock.lock()
-            let stale = generation != self.watchdogGeneration || self.isClosed
-            self.lock.unlock()
+            let stale = self.lock.withLock {
+                generation != self.watchdogGeneration || self.isClosed
+            }
             // Silence beyond the threshold is a "quiet death" of the connection
             // (a NAT timeout URLSession never reports): logically the same as onError.
             if !stale { self.scheduleReconnect() }
