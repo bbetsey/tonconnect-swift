@@ -9,6 +9,48 @@ allows a zero-major package. That is what makes the `from:` requirement in the
 installation snippet safe to follow — every version it accepts is meant to keep
 compiling.
 
+## Unreleased
+
+### Security
+
+- Incoming bridge frames are now bound to the wallet the session was established
+  with. The engine decrypted every frame with the key named in the frame's own
+  `from` field and never compared it with the key pinned at connect, so anyone
+  who knew the session's public client id — it is in the QR, in the connect link
+  and in every request to the bridge — could answer a pending request with a
+  forged result, re-pin the session to their own account, end it with a forged
+  disconnect, or park the replay counter so the wallet's real disconnect was
+  dropped. A frame from any other key is now refused before decryption, and a
+  connect event is accepted only while a connect is actually in flight. Until the
+  first connect event arrives nothing is pinned; that window is the protocol's
+  own shape, and the bridges an app subscribes to are the parties it trusts to
+  answer. (The vendored JavaScript SDK has the same weakness; this engine no
+  longer mirrors it.)
+
+### Fixed
+
+- `disconnect()` ends the session locally even when the bridge cannot be reached
+  or answers with an error. It used to throw before any teardown, leaving the
+  secret in the Keychain and the session restorable at the next launch, so a
+  bridge that was down — or refused disconnects — made the session impossible to
+  end from the app. The notice to the wallet is still attempted first; if it
+  fails, the error is thrown after the teardown, and the facade resets its
+  observable state either way.
+- A connect attempt that is cancelled, times out or is declined is now torn down
+  in full: its SSE line is closed, its keypair and pending record are dropped.
+  A wallet reply that arrives afterwards connects nothing, as the `timeout:`
+  documentation already promised. Until now the line stayed open and a late
+  Approve produced a connected, persisted session the app had given up on.
+- A wallet reply without an `id` is no longer handed to the one request in
+  flight while a cancelled request could still be the one it answers.
+  Cancellation is local — the bridge cannot recall a delivered request — so a
+  cancelled id is remembered until the wallet answers it or the session ends.
+- Starting a connect clears the previous wallet's identity at once; a request
+  issued while the new connect waits is refused instead of going out to the
+  new bridge encrypted for the old wallet.
+- A second wake during a pending QR connect closes the previous batch of
+  bridge subscriptions instead of leaving it running for the life of the app.
+
 ## 1.0.0 — 2026-09-11
 
 The first release whose public API is a promise: from here on, a change that
