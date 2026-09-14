@@ -73,12 +73,26 @@ enum RPCEnvelope {
     /// Envelope → base64-decode → SessionCrypto.decrypt → JSON string + from.
     /// ANY crypto failure is rethrown as-is (forged ciphertext is never
     /// swallowed silently) — NativeErrorMapper maps it into the 3 families.
-    static func decodeIncoming(sseData: String, sessionCrypto: SessionCrypto) throws -> DecodedIncoming {
+    ///
+    /// `expectedSender` is the wallet key pinned by the session. crypto_box only
+    /// proves that the frame was sealed by whoever owns the key in `from` — it
+    /// says nothing about WHICH key that is, and `from` is written by the sender.
+    /// So once a wallet is pinned, a frame from any other key is refused here,
+    /// before the ciphertext is even opened: the client_id is public (it is in
+    /// the QR and in every GET /events), and a stranger who knows it must not be
+    /// able to answer our requests, re-pin the session or end it. Compared as
+    /// bytes, so hex case cannot matter. nil = nothing pinned yet (a connect in
+    /// flight): the first valid connect event decides who the wallet is.
+    static func decodeIncoming(sseData: String, sessionCrypto: SessionCrypto,
+                               expectedSender: [UInt8]? = nil) throws -> DecodedIncoming {
         let envelope = try JSONDecoder().decode(BridgeMessageEnvelope.self, from: Data(sseData.utf8))
+        let senderPublicKey = try HexCoding.hexToByteArray(envelope.from)
+        if let expectedSender, senderPublicKey != expectedSender {
+            throw TonConnectError.internalError(message: "frame from a key other than the session's wallet")
+        }
         guard let cipherData = decodeBase64Lenient(envelope.message) else {
             throw TonConnectError.decodeFailure("bad base64 in BridgeMessage.message")
         }
-        let senderPublicKey = try HexCoding.hexToByteArray(envelope.from)
         let json = try sessionCrypto.decrypt(Array(cipherData), from: senderPublicKey)
         return DecodedIncoming(senderPublicKeyHex: envelope.from, json: json)
     }
