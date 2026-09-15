@@ -28,8 +28,8 @@ existing call compiles as before.
   connect event is accepted only while a connect is actually in flight. Until the
   first connect event arrives nothing is pinned; that window is the protocol's
   own shape, and the bridges an app subscribes to are the parties it trusts to
-  answer. (The vendored JavaScript SDK has the same weakness; this engine no
-  longer mirrors it.)
+  answer. (The vendored JavaScript SDK has the same weakness; this engine now
+  deliberately departs from it here.)
 
 - The SSE transport is bounded. A bridge that sent bytes without a newline, or
   an event that never ended, was held in memory in full and rescanned from the
