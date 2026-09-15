@@ -96,7 +96,13 @@ package enum WalletLink {
             items.append(URLQueryItem(name: "startapp", value: "tonconnect"))
             index = items.count - 1
         }
-        items[index].value = (items[index].value ?? "") + "-" + encodeTelegramParameters("ret=\(ret)")
+        // ret is percent-encoded first, as `r=` is for the connect payload: raw
+        // `:` `/` `?` fall outside the startapp alphabet, and a raw `&` — turned
+        // into `-` here and back into `&` by the wallet — would cut a custom
+        // return URL into separate parameters (@tonconnect/ui does the same via
+        // URLSearchParams before encodeTelegramUrlParameters).
+        items[index].value = (items[index].value ?? "") + "-"
+            + encodeTelegramParameters("ret=\(strictPercentEncode(ret))")
         components.queryItems = items
         return components.url ?? url
     }

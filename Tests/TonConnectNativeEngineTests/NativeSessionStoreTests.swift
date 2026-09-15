@@ -105,4 +105,35 @@ import TonConnectCore
             _ = try await store.load()
         }
     }
+
+    // MARK: - a record that parses is not yet a record we can run on
+
+    private func write(_ json: String, to storage: InMemoryStorage) async throws {
+        try await storage.set(json, forKey: SessionKey.make(sessionId: SessionKey.defaultSessionId, field: "native.v1"))
+    }
+
+    @Test func testLoadRefusesAnUnknownSchemaVersion() async throws {
+        let storage = InMemoryStorage()
+        try await write(#"{"schemaVersion":99,"publicKeyHex":"aa","secretKeyHex":"bb","sessionId":"aa","nextRpcRequestId":1}"#, to: storage)
+        await #expect(throws: TonConnectError.decodeFailure("native session schema 99 is not supported")) {
+            _ = try await NativeSessionStore(storage: storage).load()
+        }
+    }
+
+    /// `Int.max` used to pass load() and trap on the first request, at every launch.
+    @Test func testLoadRefusesAnRPCCounterThatCannotBeIncremented() async throws {
+        let storage = InMemoryStorage()
+        try await write(#"{"schemaVersion":1,"publicKeyHex":"aa","secretKeyHex":"bb","sessionId":"aa","nextRpcRequestId":\#(Int.max)}"#, to: storage)
+        await #expect(throws: TonConnectError.decodeFailure("native session counters out of range")) {
+            _ = try await NativeSessionStore(storage: storage).load()
+        }
+    }
+
+    @Test func testLoadRefusesNegativeCounters() async throws {
+        let storage = InMemoryStorage()
+        try await write(#"{"schemaVersion":1,"publicKeyHex":"aa","secretKeyHex":"bb","sessionId":"aa","nextRpcRequestId":0,"lastWalletEventId":-5}"#, to: storage)
+        await #expect(throws: TonConnectError.decodeFailure("native session counters out of range")) {
+            _ = try await NativeSessionStore(storage: storage).load()
+        }
+    }
 }

@@ -27,8 +27,35 @@ compiling.
   answer. (The vendored JavaScript SDK has the same weakness; this engine no
   longer mirrors it.)
 
+- The SSE transport is bounded. A bridge that sent bytes without a newline, or
+  an event that never ended, was held in memory in full and rescanned from the
+  start on every chunk — unbounded memory and quadratic time, at the bridge's
+  discretion. The parser now has ceilings (1 MiB per line and per event, 256
+  bytes per id; `SSEEventParser.Limits`), the stream is closed when one is
+  crossed, and lines are cut in the byte stream, so a multi-byte character split
+  across chunks decodes whole. A refusal — any status outside 200..<300 — is
+  reported as `NativeEventSourceError.httpStatus` and its body is never parsed;
+  an `id:` inside a 403 page used to become the next `last_event_id`.
+- A peer key of small order (all zeros, u = 1) is refused by the session crypto:
+  the shared secret it yields does not depend on our key at all. TweetNaCl
+  accepts such keys; libsodium refuses them, and so does this package now.
+
 ### Fixed
 
+- A session record with an unsupported schema version or a counter outside its
+  range is refused as corrupt instead of being run on. `nextRpcRequestId` at
+  `Int.max` used to trap on the first request, at every launch.
+- A wallet's event id written as a string (`"id":"7"`) is read on disconnect;
+  it used to send the frame down the wrong branch, and the session outlived the
+  wallet's decision to end it.
+- A custom `ReturnStrategy.url` is percent-encoded before it rides inside a
+  Telegram wallet's `startapp` payload; a raw `&` used to cut it in two.
+- Error messages derived from a `URLError` no longer include the failing URL —
+  for a bridge request that is the session's client id and the wallet's key,
+  and it went wherever the host app sends an error's text.
+- The JavaScriptCore engine no longer keeps every bridge it ever created alive:
+  the storage blocks installed into the context held the bridge strongly, and
+  the bridge holds the context.
 - `disconnect()` ends the session locally even when the bridge cannot be reached
   or answers with an error. It used to throw before any teardown, leaving the
   secret in the Keychain and the session restorable at the next launch, so a

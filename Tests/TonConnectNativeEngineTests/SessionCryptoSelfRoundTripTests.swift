@@ -91,4 +91,32 @@ struct SessionCryptoSelfRoundTripTests {
             #expect(stringified.secretKey == HexCoding.toHexString(crypto.keyPair.secretKey))
         }
     }
+
+    // MARK: - small-order peer keys
+
+    /// The all-zero point yields a shared secret independent of our key. TweetNaCl
+    /// is happy to use it; we are not.
+    @Test func testEncryptToAnAllZeroPeerKeyThrowsWeakPeerKey() {
+        let us = SessionCrypto()
+        #expect(throws: SessionCryptoError.weakPeerKey) {
+            _ = try us.encrypt("hello", to: [UInt8](repeating: 0, count: 32))
+        }
+    }
+
+    @Test func testDecryptFromAnAllZeroPeerKeyThrowsWeakPeerKey() {
+        let us = SessionCrypto()
+        let garbage = [UInt8](repeating: 7, count: 64)
+        #expect(throws: SessionCryptoError.weakPeerKey) {
+            _ = try us.decrypt(garbage, from: [UInt8](repeating: 0, count: 32))
+        }
+    }
+
+    /// u = 1 is the other classic small-order point.
+    @Test func testEncryptToThePointOneThrowsWeakPeerKey() {
+        let us = SessionCrypto()
+        var one = [UInt8](repeating: 0, count: 32); one[0] = 1
+        #expect(throws: SessionCryptoError.weakPeerKey) {
+            _ = try us.encrypt("hello", to: one)
+        }
+    }
 }
