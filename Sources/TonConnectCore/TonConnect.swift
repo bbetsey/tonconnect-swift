@@ -255,14 +255,20 @@ public final class TonConnect: ObservableObject {
     
     /// Ends the session from our side: tells the wallet, drops the stored session
     /// and resets every observable property to the disconnected state.
+    ///
+    /// The reset happens even when the engine throws — a bridge that could not be
+    /// reached loses the notice to the wallet, not the local teardown, and the
+    /// facade must show what is true here: no session.
     public func disconnect() async throws {
+        defer {
+            state = .disconnected
+            operation = nil // the operation dies with the session — no dangling toast
+            isOperationRequestSent = false
+            lastOperation = nil // a retry without a session is meaningless
+            connectLink = nil // the QR link is dead without a session too
+            connectedWalletName = nil
+        }
         try await engine.disconnect()
-        state = .disconnected
-        operation = nil // the operation dies with the session — no dangling toast
-        isOperationRequestSent = false
-        lastOperation = nil // a retry without a session is meaningless
-        connectLink = nil // the QR link is dead without a session too
-        connectedWalletName = nil
     }
 
     // MARK: - deadline
@@ -273,9 +279,12 @@ public final class TonConnect: ObservableObject {
     /// and only cancelling the calling Task ends it. With a deadline the call
     /// races a timer in a task group; the first to finish wins and the other is
     /// cancelled. Both engines honour cancellation by resolving their pending
-    /// ticket, so a timed-out request does not linger — a wallet that answers
-    /// after the deadline is ignored, exactly as after a cancel. Cancelling the
-    /// calling Task still works: the group's children are cancelled with it.
+    /// ticket, so a timed-out request does not linger here — a connect that
+    /// runs out of time is torn down, and a wallet reply after the deadline is
+    /// ignored, exactly as after a cancel. What the deadline cannot do is reach
+    /// the wallet: a request that already arrived there may still be approved,
+    /// and the app will not hear of it. Cancelling the calling Task still works:
+    /// the group's children are cancelled with it.
     private static func withTimeout<T: Sendable>(
         _ timeout: Duration?,
         _ operation: @escaping @Sendable () async throws -> T

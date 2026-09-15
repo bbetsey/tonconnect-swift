@@ -19,14 +19,22 @@ public final class StorageBridge {
 
     /// Installs __nativeStorageGet/Set/Remove. Called by the engine
     /// BEFORE __tcCreateEngine (the glue expects them to exist). Call on the JS
-    /// queue (perform). The blocks do NOT capture self — only storage and bridge
-    /// locals; StorageBridge may die after install, the functions keep working.
+    /// queue (perform). The blocks do NOT capture self — only storage and a WEAK
+    /// bridge; StorageBridge may die after install, the functions keep working.
+    ///
+    /// Weak, because the blocks live in the JSContext and the bridge owns the
+    /// context: a strong capture was the cycle bridge → context → block → bridge,
+    /// and every JSCoreEngine ever created stayed alive with its context, its
+    /// timers, its open SSE streams and the SDK's copy of the session keys. A
+    /// call that finds the bridge gone answers `undefined`; the SDK has nothing
+    /// to do with a dead bridge anyway.
     public func install(into context: JSContext) {
         let storage = self.storage
-        let bridge = self.bridge
+        weak var bridge = self.bridge
 
         let get: @convention(block) (String) -> JSValue = { key in
             guard let ctx = JSContext.current() else { fatalError("__nativeStorageGet outside JSContext") }
+            guard let bridge else { return JSValue(undefinedIn: ctx) }
             return Self.makePromise(in: ctx, bridge: bridge) { resolve, reject in
                 Task {
                     do { resolve(try await storage.get(key)) } // the key VERBATIM
@@ -36,6 +44,7 @@ public final class StorageBridge {
         }
         let set: @convention(block) (String, String) -> JSValue = { key, value in
             guard let ctx = JSContext.current() else { fatalError("__nativeStorageSet outside JSContext") }
+            guard let bridge else { return JSValue(undefinedIn: ctx) }
             return Self.makePromise(in: ctx, bridge: bridge) { resolve, reject in
                 Task {
                     do { try await storage.set(value, forKey: key); resolve(nil) }
@@ -45,6 +54,7 @@ public final class StorageBridge {
         }
         let remove: @convention(block) (String) -> JSValue = { key in
             guard let ctx = JSContext.current() else { fatalError("__nativeStorageRemove outside JSContext") }
+            guard let bridge else { return JSValue(undefinedIn: ctx) }
             return Self.makePromise(in: ctx, bridge: bridge) { resolve, reject in
                 Task {
                     do { try await storage.remove(key); resolve(nil) }

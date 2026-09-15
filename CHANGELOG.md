@@ -9,6 +9,79 @@ allows a zero-major package. That is what makes the `from:` requirement in the
 installation snippet safe to follow — every version it accepts is meant to keep
 compiling.
 
+## 1.0.1 — 2026-09-15
+
+A patch: no public API changed. Two additions are new types a consumer may
+now name — `SSEEventParser.Limits` and `NativeEventSourceError` — and every
+existing call compiles as before.
+
+### Security
+
+- Incoming bridge frames are now bound to the wallet the session was established
+  with. The engine decrypted every frame with the key named in the frame's own
+  `from` field and never compared it with the key pinned at connect, so anyone
+  who knew the session's public client id — it is in the QR, in the connect link
+  and in every request to the bridge — could answer a pending request with a
+  forged result, re-pin the session to their own account, end it with a forged
+  disconnect, or park the replay counter so the wallet's real disconnect was
+  dropped. A frame from any other key is now refused before decryption, and a
+  connect event is accepted only while a connect is actually in flight. Until the
+  first connect event arrives nothing is pinned; that window is the protocol's
+  own shape, and the bridges an app subscribes to are the parties it trusts to
+  answer. (The vendored JavaScript SDK has the same weakness; this engine no
+  longer mirrors it.)
+
+- The SSE transport is bounded. A bridge that sent bytes without a newline, or
+  an event that never ended, was held in memory in full and rescanned from the
+  start on every chunk — unbounded memory and quadratic time, at the bridge's
+  discretion. The parser now has ceilings (1 MiB per line and per event, 256
+  bytes per id; `SSEEventParser.Limits`), the stream is closed when one is
+  crossed, and lines are cut in the byte stream, so a multi-byte character split
+  across chunks decodes whole. A refusal — any status outside 200..<300 — is
+  reported as `NativeEventSourceError.httpStatus` and its body is never parsed;
+  an `id:` inside a 403 page used to become the next `last_event_id`.
+- A peer key of small order (all zeros, u = 1) is refused by the session crypto:
+  the shared secret it yields does not depend on our key at all. TweetNaCl
+  accepts such keys; libsodium refuses them, and so does this package now.
+
+### Fixed
+
+- A session record with an unsupported schema version or a counter outside its
+  range is refused as corrupt instead of being run on. `nextRpcRequestId` at
+  `Int.max` used to trap on the first request, at every launch.
+- A wallet's event id written as a string (`"id":"7"`) is read on disconnect;
+  it used to send the frame down the wrong branch, and the session outlived the
+  wallet's decision to end it.
+- A custom `ReturnStrategy.url` is percent-encoded before it rides inside a
+  Telegram wallet's `startapp` payload; a raw `&` used to cut it in two.
+- Error messages derived from a `URLError` no longer include the failing URL —
+  for a bridge request that is the session's client id and the wallet's key,
+  and it went wherever the host app sends an error's text.
+- The JavaScriptCore engine no longer keeps every bridge it ever created alive:
+  the storage blocks installed into the context held the bridge strongly, and
+  the bridge holds the context.
+- `disconnect()` ends the session locally even when the bridge cannot be reached
+  or answers with an error. It used to throw before any teardown, leaving the
+  secret in the Keychain and the session restorable at the next launch, so a
+  bridge that was down — or refused disconnects — made the session impossible to
+  end from the app. The notice to the wallet is still attempted first; if it
+  fails, the error is thrown after the teardown, and the facade resets its
+  observable state either way.
+- A connect attempt that is cancelled, times out or is declined is now torn down
+  in full: its SSE line is closed, its keypair and pending record are dropped.
+  A wallet reply that arrives afterwards connects nothing, as the `timeout:`
+  documentation already promised. Until now the line stayed open and a late
+  Approve produced a connected, persisted session the app had given up on.
+- A wallet reply without an `id` is no longer handed to the one request in
+  flight while a cancelled request could still be the one it answers.
+  Cancellation is local — the bridge cannot recall a delivered request — so a
+  cancelled id is remembered until the wallet answers it or the session ends.
+- Starting a connect clears the previous wallet's identity at once; a request
+  issued while the new connect waits is refused instead of going out to the
+  new bridge encrypted for the old wallet.
+- A second wake during a pending QR connect closes the previous batch of
+  bridge subscriptions instead of leaving it running for the life of the app.
+
 ## 1.0.0 — 2026-09-11
 
 The first release whose public API is a promise: from here on, a change that

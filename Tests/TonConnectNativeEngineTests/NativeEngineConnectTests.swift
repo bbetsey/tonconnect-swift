@@ -226,19 +226,26 @@ private final class CapturedIDs: @unchecked Sendable {
         #expect(collector.connectedCount == 1) // the repeat is rejected 
     }
 
+    /// Both ids the reconnect logic depends on — the SSE frame id and the
+    /// wallet's event id — are persisted, so a cold restart resumes from them
+    /// (W2). The wallet's reply itself carries them here: after the session is
+    /// established a second "connect" is no longer an event the engine accepts
+    /// (a connect is an answer, and there is no question in flight), so the
+    /// values are read off the connect that made the session.
     @Test func testEveryIncomingFrameRepersistsEventIDs() async throws {
         let storage = InMemoryStorage()
         let wallet = WalletSimulator()
         let engine = makeEngine(storage: storage)
-        installProvider(wallet: wallet)
+        ConnectFakeBridge.eventsFrameProvider = { url in
+            guard let clientId = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "client_id" })?.value else { return [] }
+            return [(id: nil, data: "heartbeat"),
+                    (id: "5", data: wallet.frame(Self.connectSuccessJSONId5, to: clientId))]
+        }
         _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
         let store = NativeSessionStore(storage: storage)
-        let session = await pollSession(store) { $0 != nil }
-        let clientId = try #require(session?.sessionId)
 
-        ConnectFakeBridge.pushFrame(id: "5", data: wallet.frame(Self.connectSuccessJSONId5, to: clientId))
-
-        // a "restart" reader sees BOTH updated ids (W2 — they survive a cold restart)
+        // a "restart" reader sees BOTH ids (W2 — they survive a cold restart)
         let updated = await pollSession(store) { $0?.lastEventId == "5" && $0?.lastWalletEventId == 5 }
         #expect(updated?.lastEventId == "5")
         #expect(updated?.lastWalletEventId == 5)
@@ -246,6 +253,29 @@ private final class CapturedIDs: @unchecked Sendable {
     }
 
     // MARK: - wallet-initiated disconnect (BLOCKER 1)
+
+    /// A wallet that writes its event id as a string, `"id":"7"`: the probe used
+    /// to fail on it, the frame went down the RPC-reply branch, and the session
+    /// stayed "alive" after the wallet had ended it.
+    @Test func testWalletInitiatedDisconnectWithAStringEventIDStillEndsTheSession() async throws {
+        let storage = InMemoryStorage()
+        let wallet = WalletSimulator()
+        let engine = makeEngine(storage: storage)
+        installProvider(wallet: wallet)
+        let collector = EventCollector()
+        let collectorTask = Task { for await event in engine.events { collector.append(event) } }
+        defer { collectorTask.cancel() }
+        _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
+        let store = NativeSessionStore(storage: storage)
+        let session = await pollSession(store) { $0 != nil }
+        let clientId = try #require(session?.sessionId)
+
+        ConnectFakeBridge.pushFrame(id: "3", data: wallet.frame(#"{"event":"disconnect","id":"7","payload":{}}"#, to: clientId))
+
+        #expect(await waitUntil { collector.sawDisconnected })
+        let cleared = await pollSession(store) { $0 == nil }
+        #expect(cleared == nil)
+    }
 
     @Test func testWalletInitiatedDisconnectClearsSessionAndEmitsDisconnected() async throws {
         let storage = InMemoryStorage()

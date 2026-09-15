@@ -31,7 +31,15 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     private let fetch: NativeFetch
 
     private let lock = NSLock()
-    private var pendingConnect: CheckedContinuation<ConnectEvent, Error>?
+    /// The connect attempt waiting for the wallet: its ticket, and WHICH attempt
+    /// it belongs to (the attempt's sessionId). A cancel or a failure must tear
+    /// down its own attempt and nothing else — a fast connect A → cancel A →
+    /// connect B must not let A's cancellation take down B.
+    private struct PendingConnect {
+        let attempt: String
+        let continuation: CheckedContinuation<ConnectEvent, Error>
+    }
+    private var pendingConnect: PendingConnect?
     private var sessionCrypto: SessionCrypto?
     private var gateway: ReconnectGateway?
     /// The wallet's session client_id = envelope `from` (bundle.js:4017), NOT the account key.
@@ -107,6 +115,14 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// Tickets awaiting wallet RPC responses, keyed by AppRequest.id.
     private var pendingRPC: [String: CheckedContinuation<WalletResponse, Error>] = [:]
     private var pendingRPCTasks: [String: NativeFetchTask] = [:]
+    /// Tombstones: ids of requests cancelled (or timed out) after they may have
+    /// reached the bridge. Cancellation is local — the bridge has no "recall" —
+    /// so the wallet can still answer them. A reply WITH an id for a tombstone is
+    /// simply dropped; a reply WITHOUT an id is the problem: it used to be
+    /// adopted by whatever single request was in flight, i.e. a late answer to
+    /// the cancelled A resolved the unrelated B. While a tombstone exists, id-less
+    /// frames are not adopted at all. Cleared at every session boundary.
+    private var retiredRPCIDs: Set<String> = []
     /// connectUniversal race: participants and the winner.
     private var universalGateways: [ReconnectGateway] = []
     private var universalWinner: ReconnectGateway?
@@ -173,6 +189,13 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
             currentBridgeUrl = source.bridgeUrl
             lastWalletEventId = nil // new session — wallet-event count restarts (otherwise the replay guard would reject id=1)
             universalBridgeURLs = []
+            universalWinner = nil
+            // The previous wallet's identity ends here. Left in place, a request
+            // issued while this connect waits passed the "active session" guard and
+            // went to the NEW bridge, encrypted to the OLD wallet's key, under the
+            // new client_id — a ticket nothing could ever answer.
+            walletPublicKey = nil
+            accountAddress = nil
         }
         // The previous session's tickets can never be answered, and its id counter
         // restarts here — leaving them would let a new request overwrite a live ticket.
@@ -206,7 +229,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         // preempted between opening the gateway and registering the ticket,
         // resolvePendingConnect found nil and silently dropped the result — the
         // ticket waited forever (same "ticket before request" discipline as performRPC).
-        return try await awaitConnectEvent { [self] in
+        return try await awaitConnectEvent(attempt: crypto.sessionId) { [self] in
             openGateway(bridgeUrl: source.bridgeUrl, clientId: crypto.sessionId, lastEventId: nil)
         }
     }
@@ -293,35 +316,83 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// afterRegistering is the subscription start point: it runs AFTER the ticket
     /// is registered so a synchronously delivered frame cannot outrun the ticket
     /// (which would mean an eternal await).
-    private func awaitConnectEvent(afterRegistering register: @escaping () -> Void = {}) async throws -> ConnectEvent {
+    private func awaitConnectEvent(attempt: String,
+                                   afterRegistering register: @escaping () -> Void = {}) async throws -> ConnectEvent {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 lock.lock()
                 let previous = pendingConnect
-                pendingConnect = continuation
+                pendingConnect = PendingConnect(attempt: attempt, continuation: continuation)
                 lock.unlock()
-                previous?.resume(throwing: CancellationError())
+                // The superseded attempt's state was already replaced by ours under
+                // the lock in connect(); only its ticket is left to settle.
+                previous?.continuation.resume(throwing: CancellationError())
                 register()
                 // Race: cancellation may arrive BEFORE the ticket is registered — re-check the flag.
                 if Task.isCancelled {
-                    resolvePendingConnect(.failure(CancellationError()))
+                    resolvePendingConnect(.failure(CancellationError()), attempt: attempt)
                 }
             }
         } onCancel: {
-            resolvePendingConnect(.failure(CancellationError()))
+            resolvePendingConnect(.failure(CancellationError()), attempt: attempt)
         }
     }
 
-    /// Exactly one resume: the pending ticket is taken under the lock and nilled before resolving.
-    private func resolvePendingConnect(_ result: Result<ConnectEvent, Error>) {
-        lock.lock()
-        let pending = pendingConnect
-        pendingConnect = nil
-        lock.unlock()
+    /// Exactly one resume: the pending ticket is taken under the lock and nilled
+    /// before resolving. `attempt` restricts the resolution to one attempt's
+    /// ticket (cancellation paths); nil resolves whichever attempt is current
+    /// (a wallet frame — by construction it can only be for the current one).
+    ///
+    /// A failure is a session boundary for the attempt: whatever it set up —
+    /// the SSE line, the keypair, the pending record in the store — is torn
+    /// down, so a wallet that answers AFTER a cancel, a timeout or a decline
+    /// finds nothing to complete. Until this, cancellation only settled the
+    /// ticket: the line stayed open, unpause re-opened it, and a late Approve
+    /// silently produced a connected, persisted session the app had given up on.
+    private func resolvePendingConnect(_ result: Result<ConnectEvent, Error>, attempt: String? = nil) {
+        let pending: PendingConnect? = lock.withLock {
+            guard let current = pendingConnect else { return nil }
+            if let attempt, current.attempt != attempt { return nil }
+            pendingConnect = nil
+            return current
+        }
         guard let pending else { return }
         switch result {
-        case .success(let event): pending.resume(returning: event)
-        case .failure(let error): pending.resume(throwing: error)
+        case .success(let event):
+            pending.continuation.resume(returning: event)
+        case .failure(let error):
+            abandonAttempt(pending.attempt)
+            pending.continuation.resume(throwing: error)
+        }
+    }
+
+    /// Tears down one connect attempt, if it is still the current state: closes
+    /// its gateways, forgets its keypair and bridge, and removes its pending
+    /// record from the store — only that record (matched by sessionId and still
+    /// unanswered), so a newer attempt's record is never touched. Runs on the
+    /// FIFO chain like every store write.
+    private func abandonAttempt(_ attempt: String) {
+        let (g, universal): (ReconnectGateway?, [ReconnectGateway]) = lock.withLock {
+            guard sessionCrypto?.sessionId == attempt else { return (nil, []) }
+            let g = gateway
+            gateway = nil
+            let universal = universalGateways
+            universalGateways = []
+            universalBridgeURLs = []
+            universalWinner = nil
+            sessionCrypto = nil
+            currentBridgeUrl = nil
+            walletPublicKey = nil
+            accountAddress = nil
+            lastWalletEventId = nil
+            return (g, universal)
+        }
+        g?.close()
+        for stale in universal { stale.close() }
+        persist("discard the abandoned pending session") { store in
+            guard let record = try await store.load(),
+                  record.sessionId == attempt, record.walletPublicKeyHex == nil else { return }
+            try await store.clear()
         }
     }
 
@@ -339,13 +410,16 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         // without the filter decodeIncoming throws on it and kills pendingConnect
         // (observed on a live wallet).
         if data == "heartbeat" { return }
-        lock.lock()
-        let crypto = sessionCrypto
-        lock.unlock()
+        let (crypto, pinnedWallet) = lock.withLock { (sessionCrypto, walletPublicKey) }
         guard let crypto else { return }
         do {
-            let incoming = try RPCEnvelope.decodeIncoming(sseData: data, sessionCrypto: crypto)
-            dispatch(json: incoming.json, sseId: sseId, senderHex: incoming.senderPublicKeyHex)
+            // Once a wallet is pinned, only its frames get past this line (see
+            // RPCEnvelope.decodeIncoming) — a stranger who knows the public
+            // client_id cannot answer our requests, re-pin the session or end it.
+            let incoming = try RPCEnvelope.decodeIncoming(sseData: data, sessionCrypto: crypto,
+                                                          expectedSender: pinnedWallet)
+            dispatch(json: incoming.json, sseId: sseId, senderHex: incoming.senderPublicKeyHex,
+                     walletPinned: pinnedWallet != nil)
         } catch {
             // An undecodable frame is IGNORED and
             // the engine keeps listening. Resolving the pending connect with an error
@@ -357,12 +431,34 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         }
     }
 
+    /// The first look at a decrypted frame: which kind is it, and what event id
+    /// does it carry. The id is read the way ConnectEvent reads it — a number, or
+    /// a number in a string — because a probe that fails on `"id":"7"` used to
+    /// send the whole frame down the wrong branch, and a wallet's disconnect was
+    /// silently lost.
     private struct IncomingProbe: Decodable {
         let event: String?
         let id: Int?
+
+        private enum CodingKeys: String, CodingKey { case event, id }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            event = try container.decodeIfPresent(String.self, forKey: .event)
+            if let number = try? container.decode(Int.self, forKey: .id) {
+                id = number
+            } else if let string = try? container.decode(String.self, forKey: .id) {
+                id = Int(string)
+            } else {
+                id = nil
+            }
+        }
     }
 
-    private func dispatch(json: String, sseId: String?, senderHex: String) {
+    /// Before a wallet is pinned (a connect in flight) the only meaningful frame
+    /// is the wallet's connect reply; a disconnect or an RPC reply from a key we
+    /// have not accepted yet has nobody to speak for and is dropped.
+    private func dispatch(json: String, sseId: String?, senderHex: String, walletPinned: Bool) {
         let probe = try? JSONDecoder().decode(IncomingProbe.self, from: Data(json.utf8))
         switch probe?.event {
         case "connect", "connect_error":
@@ -370,8 +466,10 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         case "disconnect":
             // Wallet-initiated teardown (BLOCKER 1): the ConnectEvent decoder does
             // not understand this event — an explicit branch is mandatory.
+            guard walletPinned else { return }
             handleWalletDisconnect(eventId: probe?.id)
         default:
+            guard walletPinned else { return }
             handleWalletResponse(json: json) // "result"/"error" + "id" — a reply to our AppRequest
         }
     }
@@ -392,6 +490,11 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     }
 
     private func handleConnectEvent(json: String, sseId: String?, senderHex: String) {
+        // A connect event is an answer, and there has to be a question: with no
+        // connect in flight it is ignored. Otherwise a second "connect" — from
+        // the pinned wallet or, before pinning existed, from anyone — re-pinned
+        // the session and switched the account under the app's feet.
+        guard lock.withLock({ pendingConnect != nil }) else { return }
         let connectEvent: ConnectEvent
         do { connectEvent = try JSONDecoder().decode(ConnectEvent.self, from: Data(json.utf8)) }
         catch {
@@ -421,30 +524,35 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         sseId: String?,
         senderHex: String
     ) {
-        lock.lock()
-        walletPublicKey = try? HexCoding.hexToByteArray(senderHex)
-        accountAddress = Self.accountAddress(from: connectEvent)
-        let crypto = sessionCrypto
-        let bridgeUrl = currentBridgeUrl
-        let walletEventId = lastWalletEventId
-        lock.unlock()
-        if let crypto {
-            let keypair = crypto.stringifyKeypair()
-            let session = NativeSession(
-                publicKeyHex: keypair.publicKey,
-                secretKeyHex: keypair.secretKey,
-                sessionId: crypto.sessionId,
-                walletPublicKeyHex: senderHex,
-                bridgeUrl: bridgeUrl,
-                lastEventId: sseId,
-                nextRpcRequestId: 1,
-                lastWalletEventId: walletEventId,
-                connectEventJSON: json
-            )
-            persist("save the connected session") { try await $0.save(session) }
-        }
+        // Pinning the wallet and taking the ticket happen under ONE lock: a cancel
+        // racing this frame either finds the ticket gone (we won: the session
+        // stands) or takes it first (it won: sessionCrypto is nil by the time we
+        // look, and the frame is dropped). No state is ever half-pinned.
+        let taken: (ticket: PendingConnect, crypto: SessionCrypto, bridgeUrl: String?, walletEventId: Int?)? =
+            lock.withLock {
+                guard let pending = pendingConnect, let crypto = sessionCrypto,
+                      crypto.sessionId == pending.attempt else { return nil }
+                pendingConnect = nil
+                walletPublicKey = try? HexCoding.hexToByteArray(senderHex)
+                accountAddress = Self.accountAddress(from: connectEvent)
+                return (pending, crypto, currentBridgeUrl, lastWalletEventId)
+            }
+        guard let taken else { return }
+        let keypair = taken.crypto.stringifyKeypair()
+        let session = NativeSession(
+            publicKeyHex: keypair.publicKey,
+            secretKeyHex: keypair.secretKey,
+            sessionId: taken.crypto.sessionId,
+            walletPublicKeyHex: senderHex,
+            bridgeUrl: taken.bridgeUrl,
+            lastEventId: sseId,
+            nextRpcRequestId: 1,
+            lastWalletEventId: taken.walletEventId,
+            connectEventJSON: json
+        )
+        persist("save the connected session") { try await $0.save(session) }
         eventContinuation.yield(.connected(connectEvent))
-        resolvePendingConnect(.success(connectEvent))
+        taken.ticket.continuation.resume(returning: connectEvent)
     }
 
     /// Address from the ton_addr reply of a successful ConnectEvent (raw "wc:hex" form).
@@ -456,8 +564,10 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         return nil
     }
 
-    /// Wallet-initiated end of session (BLOCKER 1). Same monotonicity and E2E
-    /// decryption as any wallet event — a forged frame cannot tear the session down.
+    /// Wallet-initiated end of session (BLOCKER 1). Reaches here only from the
+    /// pinned wallet's key (handleIncoming refuses every other sender before
+    /// decrypting) and only past the monotonicity check — so neither a stranger
+    /// who knows the client_id nor a replayed frame can tear the session down.
     /// Order: yield → clear → close (the event reaches observers before state teardown).
     private func handleWalletDisconnect(eventId: Int?) {
         guard let eventId, acceptWalletEventId(eventId) else { return }
@@ -547,9 +657,18 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         return try await performRPC(method: "signData", paramsJSON: [json])
     }
 
-    /// SDK parity: disconnect resolves on DELIVERY of the request to the bridge
-    /// (wallets are not required to reply) — awaiting an SSE reply here would hang
-    /// forever. Then local teardown: clear (native key only) → close → .disconnected.
+    /// Tells the wallet, then ends the session locally — and the second half
+    /// does not depend on the first. The notice to the wallet is delivered to
+    /// the bridge (wallets are not required to reply, so awaiting an SSE reply
+    /// would hang forever); if the bridge is unreachable or answers 5xx, the
+    /// notice is lost, but the session still ends here: the record is cleared,
+    /// the line is closed, `.disconnected` is emitted, and the delivery error is
+    /// thrown AFTER all that, so the caller knows the wallet may still think it
+    /// is connected. Until this, a failed POST threw before any teardown: the
+    /// secret stayed in the Keychain, the next launch restored the session, and
+    /// a bridge that refused disconnects (or was simply down) made the session
+    /// impossible to end from this side at all. The vendored JS SDK removes the
+    /// session in both `catch` and `finally`; this now matches it.
     public func disconnect() async throws {
         let (crypto, walletKey, bridgeUrl) = lock.withLock {
             (sessionCrypto, walletPublicKey, currentBridgeUrl)
@@ -557,6 +676,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         guard let crypto, let walletKey, let bridgeUrl else {
             throw TonConnectError.internalError(message: "no active session to disconnect")
         }
+        var deliveryError: Error?
         do {
             // Serialized increment through the FIFO chain (see performRPC).
             let idResult: Result<Int, Error> = await enqueuePersistReturning { [store] in
@@ -571,23 +691,31 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
                                              to: HexCoding.toHexString(walletKey),
                                              ttl: 300, topic: "disconnect")
             try await postToBridge(url: url, body: body)
-        } catch { throw NativeErrorMapper.map(error) }
+        } catch { deliveryError = NativeErrorMapper.map(error) }
 
-        let store = store
-        persist("clear the session") { try await $0.clear() }
-        let (chain, g): (Task<Void, Never>, ReconnectGateway?) = lock.withLock {
-            let chain = persistChain
+        // Local teardown, unconditionally. The clear goes through the same FIFO
+        // chain as every write, but its failure is REPORTED, not logged: a
+        // Keychain that keeps the secret after "disconnect succeeded" is worse
+        // than an error.
+        let clearResult: Result<Void, Error> = await enqueuePersistReturning { [store] in
+            do { try await store.clear(); return .success(()) }
+            catch { return .failure(error) }
+        }
+        let g: ReconnectGateway? = lock.withLock {
             let g = gateway
             gateway = nil
             sessionCrypto = nil
+            currentBridgeUrl = nil
             walletPublicKey = nil
             accountAddress = nil
-            return (chain, g)
+            lastWalletEventId = nil
+            return g
         }
         failAllPendingRPC(Self.sessionEndedError)
         g?.close()
-        await chain.value // clear has landed: restore after disconnect will throw
         eventContinuation.yield(.disconnected) // the conformance suite expects the event on the stream
+        if case .failure(let error) = clearResult { throw NativeErrorMapper.map(error) }
+        if let deliveryError { throw deliveryError }
     }
 
     /// Shared RPC path: a monotonic id from the store (persisted BEFORE sending —
@@ -659,9 +787,12 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         // then there is nothing to confuse it with. With two or more it is dropped:
         // resolving the wrong operation is worse than resolving none. Before this,
         // every such frame was dropped and the operation simply never returned.
-        lock.lock()
-        let soleID = pendingRPC.count == 1 ? pendingRPC.keys.first : nil
-        lock.unlock()
+        // ...and only while no cancelled request could still be answered: after a
+        // cancel, an id-less frame may be the late answer to THAT request, and
+        // handing it to the one still in flight would resolve the wrong operation.
+        let soleID: String? = lock.withLock {
+            pendingRPC.count == 1 && retiredRPCIDs.isEmpty ? pendingRPC.keys.first : nil
+        }
         guard let soleID,
               let response = Self.decode(json: json, adoptingID: soleID) else { return }
         resolvePendingRPC(id: soleID, .success(response))
@@ -691,10 +822,14 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
 
     /// Exactly one resume per ticket (same discipline as resolvePendingConnect).
     private func resolvePendingRPC(id: String, _ result: Result<WalletResponse, Error>) {
-        lock.lock()
-        let pending = pendingRPC.removeValue(forKey: id)
-        pendingRPCTasks.removeValue(forKey: id)
-        lock.unlock()
+        let pending: CheckedContinuation<WalletResponse, Error>? = lock.withLock {
+            pendingRPCTasks.removeValue(forKey: id)
+            let pending = pendingRPC.removeValue(forKey: id)
+            // An answer WITH an id for a retired request settles it: the wallet
+            // has spoken, and id-less adoption may resume.
+            if pending == nil { retiredRPCIDs.remove(id) }
+            return pending
+        }
         guard let pending else { return }
         switch result {
         case .success(let response): pending.resume(returning: response)
@@ -713,6 +848,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         let tasks = pendingRPCTasks
         pendingRPC = [:]
         pendingRPCTasks = [:]
+        retiredRPCIDs = [] // the boundary ends those requests for good
         lock.unlock()
         for task in tasks.values { task.cancel() }
         for continuation in pending.values { continuation.resume(throwing: error) }
@@ -724,9 +860,12 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     }
 
     private func cancelPendingRPC(id: String) {
-        lock.lock()
-        let task = pendingRPCTasks.removeValue(forKey: id)
-        lock.unlock()
+        let task: NativeFetchTask? = lock.withLock {
+            // Cancellation is local; the request may already sit in the bridge,
+            // and the wallet may still answer it. Remember the id (see retiredRPCIDs).
+            if pendingRPC[id] != nil { retiredRPCIDs.insert(id) }
+            return pendingRPCTasks.removeValue(forKey: id)
+        }
         task?.cancel()
         resolvePendingRPC(id: id, .failure(CancellationError()))
     }
@@ -783,6 +922,8 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
             lastWalletEventId = nil
             universalWinner = nil
             universalBridgeURLs = bridgeURLs
+            walletPublicKey = nil // the previous wallet's identity ends here (see connect)
+            accountAddress = nil
             return (oldGateway, oldUniversal)
         }
         failAllPendingRPC(Self.sessionEndedError) // same session boundary as connect
@@ -793,7 +934,7 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
 
         // Gateways start after the ticket is registered (same race as in connect):
         // the first bridge's synchronous frame must not outrun pendingConnect.
-        return try await awaitConnectEvent { [self] in
+        return try await awaitConnectEvent(attempt: crypto.sessionId) { [self] in
             startUniversalGateways(bridgeURLs: bridgeURLs, clientId: crypto.sessionId)
         }
     }
@@ -808,9 +949,16 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
                                      clock: clock)
             opened.append((bridgeUrl, g))
         }
-        lock.lock()
-        universalGateways = opened.map(\.gateway)
-        lock.unlock()
+        // A batch may already be running — two wakes in a row during a pending
+        // race, with no pause between them. Left unreferenced, the old batch kept
+        // its streams open for the life of the process: one more subscription per
+        // bridge under the same client_id, closed by nobody, not even deinit.
+        let stale: [ReconnectGateway] = lock.withLock {
+            let stale = universalGateways
+            universalGateways = opened.map(\.gateway)
+            return stale
+        }
+        for old in stale { old.close() }
         for (bridgeUrl, g) in opened {
             g.onMessage = { [weak self, weak g] id, data in
                 guard let g else { return }
@@ -823,7 +971,12 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
     /// first-writer-wins: the FIRST gateway whose frame SUCCESSFULLY decrypts into
     /// a valid ConnectEvent.success wins. Corrupted ciphertext (decode throws) does
     /// NOT win — stricter than the JS SDK (which closes the others on any first
-    /// message); a deliberate hardening against spoofing in the race.
+    /// message). What this cannot do is tell a wallet from an impostor: before the
+    /// first connect event nothing is pinned, and the client_id is public, so any
+    /// party that can reach one of the bridges — including the bridge itself —
+    /// can answer first with its own key. That is the protocol's shape, not a
+    /// gap this code can close; the list of bridges IS the list of parties
+    /// trusted to answer. Once the winner is pinned, every other key is refused.
     private func handleUniversalIncoming(gateway: ReconnectGateway, bridgeUrl: String,
                                          sseId: String?, data: String) {
         lock.lock()

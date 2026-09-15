@@ -5,6 +5,11 @@ import Foundation
 enum SessionCryptoError: Error, Equatable, Sendable {
     case decryptionFailed
     case invalidKeyLength(expected: Int, actual: Int)
+    /// The peer's public key is a point of small order (all zeros, u = 1 and
+    /// friends): the shared secret it yields is a constant that does not depend
+    /// on our secret key at all. TweetNaCl accepts such a key; libsodium refuses
+    /// it, and so do we.
+    case weakPeerKey
 }
 
 /// A byte-for-byte port of the JS SessionCrypto class from @tonconnect/protocol@3.0.0.
@@ -45,9 +50,22 @@ struct SessionCrypto {
         return key
     }
 
+    /// A peer key is usable only if the Diffie-Hellman result with OUR secret is
+    /// not the all-zero point — the signature of a small-order key. Checked on
+    /// every encrypt and decrypt, which also covers the moment a wallet key is
+    /// pinned (the connect event is decrypted with it first) and a key read back
+    /// from the store. One extra scalar multiplication per frame.
+    private func validatedPeer(_ key: [UInt8]) throws -> [UInt8] {
+        let key = try Self.validated32(key)
+        var shared = [UInt8](repeating: 0, count: 32)
+        _ = crypto_scalarmult_curve25519_tweet(&shared, keyPair.secretKey, key)
+        guard shared.contains(where: { $0 != 0 }) else { throw SessionCryptoError.weakPeerKey }
+        return key
+    }
+
     /// UTF-8 → nonce(24 random bytes from the seam) || ciphertext. Raw bytes.
     func encrypt(_ message: String, to receiverPublicKey: [UInt8]) throws -> [UInt8] {
-        let receiverPublicKey = try Self.validated32(receiverPublicKey)
+        let receiverPublicKey = try validatedPeer(receiverPublicKey)
         _ = RandomBytesBridge.bootstrap
         let encodedMessage = Array(message.utf8)
         var nonce = [UInt8](repeating: 0, count: nonceLength)
@@ -63,7 +81,7 @@ struct SessionCrypto {
 
     /// First 24 bytes are the nonce; any open failure → throw (never silent).
     func decrypt(_ message: [UInt8], from senderPublicKey: [UInt8]) throws -> String {
-        let senderPublicKey = try Self.validated32(senderPublicKey)
+        let senderPublicKey = try validatedPeer(senderPublicKey)
         guard message.count >= nonceLength else {
             throw SessionCryptoError.decryptionFailed // truncated message
         }
