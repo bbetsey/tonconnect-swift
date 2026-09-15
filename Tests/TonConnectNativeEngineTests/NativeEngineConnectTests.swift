@@ -254,6 +254,29 @@ private final class CapturedIDs: @unchecked Sendable {
 
     // MARK: - wallet-initiated disconnect (BLOCKER 1)
 
+    /// A wallet that writes its event id as a string, `"id":"7"`: the probe used
+    /// to fail on it, the frame went down the RPC-reply branch, and the session
+    /// stayed "alive" after the wallet had ended it.
+    @Test func testWalletInitiatedDisconnectWithAStringEventIDStillEndsTheSession() async throws {
+        let storage = InMemoryStorage()
+        let wallet = WalletSimulator()
+        let engine = makeEngine(storage: storage)
+        installProvider(wallet: wallet)
+        let collector = EventCollector()
+        let collectorTask = Task { for await event in engine.events { collector.append(event) } }
+        defer { collectorTask.cancel() }
+        _ = try await engine.connect(source: Self.source, items: [.tonAddress(network: nil)])
+        let store = NativeSessionStore(storage: storage)
+        let session = await pollSession(store) { $0 != nil }
+        let clientId = try #require(session?.sessionId)
+
+        ConnectFakeBridge.pushFrame(id: "3", data: wallet.frame(#"{"event":"disconnect","id":"7","payload":{}}"#, to: clientId))
+
+        #expect(await waitUntil { collector.sawDisconnected })
+        let cleared = await pollSession(store) { $0 == nil }
+        #expect(cleared == nil)
+    }
+
     @Test func testWalletInitiatedDisconnectClearsSessionAndEmitsDisconnected() async throws {
         let storage = InMemoryStorage()
         let wallet = WalletSimulator()

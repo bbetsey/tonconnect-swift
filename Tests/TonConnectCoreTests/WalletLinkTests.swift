@@ -56,4 +56,16 @@ struct WalletLinkTests {
         #expect(WalletLink.appendingReturnStrategy("back", to: url).absoluteString
                 == "https://t.me/wallet/start?startapp=tonconnect-ret__back")
     }
+
+    /// A custom return URL rides inside startapp percent-encoded first: raw `:`
+    /// `/` `?` are outside the startapp alphabet, and a raw `&` — `-` on the
+    /// wire, `&` again in the wallet — would cut the URL into two parameters.
+    @Test func testAppendingCustomReturnURLOnTelegramLinkPercentEncodesItFirst() throws {
+        let url = try #require(URL(string: "https://t.me/wallet/start?startapp=tonconnect-v__2"))
+        let result = WalletLink.appendingReturnStrategy("myapp://cb?x=1&y=2", to: url)
+        let startapp = try #require(URLComponents(url: result, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "startapp" }?.value)
+        #expect(startapp == "tonconnect-v__2-ret__myapp--3A--2F--2Fcb--3Fx--3D1--26y--3D2")
+        #expect(!startapp.contains(where: { ":/?&".contains($0) }))
+    }
 }

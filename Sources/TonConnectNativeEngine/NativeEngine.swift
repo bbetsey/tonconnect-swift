@@ -431,9 +431,28 @@ public final class NativeEngine: TonConnectEngine, @unchecked Sendable {
         }
     }
 
+    /// The first look at a decrypted frame: which kind is it, and what event id
+    /// does it carry. The id is read the way ConnectEvent reads it — a number, or
+    /// a number in a string — because a probe that fails on `"id":"7"` used to
+    /// send the whole frame down the wrong branch, and a wallet's disconnect was
+    /// silently lost.
     private struct IncomingProbe: Decodable {
         let event: String?
         let id: Int?
+
+        private enum CodingKeys: String, CodingKey { case event, id }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            event = try container.decodeIfPresent(String.self, forKey: .event)
+            if let number = try? container.decode(Int.self, forKey: .id) {
+                id = number
+            } else if let string = try? container.decode(String.self, forKey: .id) {
+                id = Int(string)
+            } else {
+                id = nil
+            }
+        }
     }
 
     /// Before a wallet is pinned (a connect in flight) the only meaningful frame

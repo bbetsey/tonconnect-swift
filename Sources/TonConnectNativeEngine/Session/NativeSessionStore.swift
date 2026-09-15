@@ -17,13 +17,29 @@ struct NativeSessionStore {
     private var key: String { SessionKey.make(sessionId: sessionId, field: "native.v1") }
 
     /// nil = no session (not an error); corrupt JSON = decodeFailure (not a silent nil).
+    ///
+    /// A record that parses is not yet a record we can run on: the storage is
+    /// shared with whatever else the app puts there, and a consumer may supply
+    /// its own `TonConnectStorage`. A future schema version, a counter outside
+    /// its range (the RPC id must stay incrementable — `Int.max` trapped on the
+    /// first request, at every launch, with no way out short of a new connect)
+    /// are refused here as `decodeFailure`, the contract for a corrupt record.
     func load() async throws -> NativeSession? {
         guard let json = try await storage.get(key) else { return nil }
+        let session: NativeSession
         do {
-            return try JSONDecoder().decode(NativeSession.self, from: Data(json.utf8))
+            session = try JSONDecoder().decode(NativeSession.self, from: Data(json.utf8))
         } catch {
             throw TonConnectError.decodeFailure("corrupt native session")
         }
+        guard session.schemaVersion == 1 else {
+            throw TonConnectError.decodeFailure("native session schema \(session.schemaVersion) is not supported")
+        }
+        guard (1..<Int.max).contains(session.nextRpcRequestId),
+              (session.lastWalletEventId ?? 0) >= 0 else {
+            throw TonConnectError.decodeFailure("native session counters out of range")
+        }
+        return session
     }
 
     func save(_ session: NativeSession) async throws {
@@ -44,7 +60,11 @@ struct NativeSessionStore {
             throw TonConnectError.internalError(message: "no native session for rpc id")
         }
         let current = session.nextRpcRequestId
-        session.nextRpcRequestId = current + 1
+        let (next, overflow) = current.addingReportingOverflow(1)
+        guard !overflow else { // load() refuses Int.max already; belt and braces
+            throw TonConnectError.internalError(message: "rpc request id counter exhausted")
+        }
+        session.nextRpcRequestId = next
         try await save(session)
         return current
     }

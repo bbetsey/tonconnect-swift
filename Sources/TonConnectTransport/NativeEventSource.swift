@@ -1,5 +1,14 @@
 import Foundation
 
+/// Why a stream ended on the transport's own initiative — handed to `onError`.
+public enum NativeEventSourceError: Error, Equatable, Sendable {
+    /// The bridge answered GET /events with a status outside 200..<300. The body
+    /// is not read: a 403 page is not an event stream, whatever it contains.
+    case httpStatus(Int)
+    /// The stream crossed one of the parser's ceilings (see ``SSEEventParser/Limits``).
+    case limitExceeded(SSEEventParser.LimitViolation)
+}
+
 /// An honest low-level wrapper of the browser EventSource over a URLSession stream.
 /// Does NOT reconnect on its own: on a drop it calls onError, and the reconnect
 /// cadence is held one layer up (otherwise two layers race to reconnect the same
@@ -85,12 +94,30 @@ extension NativeEventSource: URLSessionDataDelegate {
                            didReceive response: URLResponse,
                            completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if (200..<300).contains(code) { setState(.open); onOpen?() }
+        guard (200..<300).contains(code) else {
+            // A refusal is a refusal. The body used to be fed to the parser like a
+            // live stream: an `id:` inside a 403 page became the next
+            // last_event_id and went into the session record, and its bytes
+            // re-armed the heartbeat watchdog.
+            completionHandler(.cancel)
+            fail(NativeEventSourceError.httpStatus(code))
+            return
+        }
+        setState(.open)
+        onOpen?()
         completionHandler(.allow)
     }
     public func urlSession(_ s: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard readyState == .open else { return } // a body after a refusal or a close
         onRawData?(data) // "the stream sent something" — record BEFORE parsing
         for event in parser.consume(data) { onMessage?(event.id, event.data) }
+        if let violation = parser.violation {
+            // The parser is dead; so is the stream. Closing first: the completion
+            // that follows the cancel must not be reported as a second error.
+            setState(.closed)
+            dataTask.cancel()
+            onError?(NativeEventSourceError.limitExceeded(violation))
+        }
     }
     public func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         // The stream finished/dropped. NO reconnect — signal only.
