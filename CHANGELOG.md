@@ -9,7 +9,11 @@ allows a zero-major package. That is what makes the `from:` requirement in the
 installation snippet safe to follow — every version it accepts is meant to keep
 compiling.
 
-## Unreleased
+## 1.0.1 — 2026-09-15
+
+A patch: no public API changed. Two additions are new types a consumer may
+now name — `SSEEventParser.Limits` and `NativeEventSourceError` — and every
+existing call compiles as before.
 
 ### Security
 
